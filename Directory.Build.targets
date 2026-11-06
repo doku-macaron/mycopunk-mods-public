@@ -1,0 +1,19 @@
+<Project>
+
+  <PropertyGroup>
+    <PluginDeployDir Condition="'$(PluginDeployDir)' == '' And Exists('$(GamePath)\BepInEx\plugins\$(AssemblyName).dll')">$(GamePath)\BepInEx\plugins</PluginDeployDir>
+    <PluginDeployDir Condition="'$(PluginDeployDir)' == ''">$(GamePath)\BepInEx\plugins\$(AssemblyName)</PluginDeployDir>
+  </PropertyGroup>
+
+  <Target Name="CollectPlugin" AfterTargets="Build">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(MSBuildThisFileDirectory)output" />
+  </Target>
+
+  <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(DeployToGame)' == 'true' And Exists('$(GamePath)\BepInEx')">
+    <MakeDir Directories="$(PluginDeployDir)" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(PluginDeployDir)" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginDeployDir)" />
+    <Message Importance="high" Text="Deployed to $(PluginDeployDir)" />
+  </Target>
+
+</Project>

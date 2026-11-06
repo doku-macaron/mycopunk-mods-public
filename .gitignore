@@ -1,0 +1,12 @@
+bin/
+obj/
+*.user
+.vs/
+GamePath.props
+dist/
+/output/
+
+# Game data dumps (decompiled IL, extracted assets): local only
+tools/datamine/out/
+__pycache__/
+*.pyc

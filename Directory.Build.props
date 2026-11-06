@@ -1,0 +1,61 @@
+<Project>
+
+  <!--
+    Shared settings for every mod under mods/.
+    Local override of the game location: GamePath.props (with <GamePath>...</GamePath>) at the repository
+    root, or next to a single csproj. Both are git-ignored.
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)GamePath.props" Condition="Exists('$(MSBuildThisFileDirectory)GamePath.props')" />
+  <Import Project="$(MSBuildProjectDirectory)\GamePath.props" Condition="Exists('$(MSBuildProjectDirectory)\GamePath.props')" />
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <DebugType>portable</DebugType>
+    <!-- System.Net.Http version clash comes from game assemblies we do not use. -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+    <GamePath Condition="'$(GamePath)' == ''">D:\SteamLibrary\steamapps\common\Mycopunk</GamePath>
+    <ManagedDir>$(GamePath)\Mycopunk_Data\Managed</ManagedDir>
+    <BepInExCore>$(GamePath)\BepInEx\core</BepInExCore>
+    <!-- Off by default: copy into the game folder only when asked (-p:DeployToGame=true). -->
+    <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx" HintPath="$(BepInExCore)\BepInEx.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(BepInExCore)\0Harmony.dll" Private="false" />
+    <Reference Include="Assembly-CSharp" HintPath="$(ManagedDir)\Assembly-CSharp.dll" Private="false" />
+    <Reference Include="UnityEngine" HintPath="$(ManagedDir)\UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(ManagedDir)\UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="Unity.InputSystem" HintPath="$(ManagedDir)\Unity.InputSystem.dll" Private="false" />
+    <Reference Include="Unity.Netcode.Runtime" HintPath="$(ManagedDir)\Unity.Netcode.Runtime.dll" Private="false" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
+  </PropertyGroup>
+
+  <!--
+    The shared code (shared/, namespace MycopunkShared) is its own plugin, Mycopunk Mod Kit
+    (mods/modkit). Every mod references it (not copied next to the mod) and declares
+    [BepInDependency(MycopunkShared.ModKit.Guid)]. A project opts out with <NoModKit>true</NoModKit>.
+    shared/Hud and shared/Menu need TextMeshPro and UnityEngine.UI: <UseSharedHud> / <UseSharedMenu> still add those
+    references for mods that use the HUD lines or TMP themselves.
+  -->
+  <ItemGroup Condition="'$(IsModKit)' != 'true' And '$(NoModKit)' != 'true'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)mods\modkit\src\MycopunkModKit\MycopunkModKit.csproj" Private="false" />
+  </ItemGroup>
+
+  <!-- TextMeshPro and UnityEngine.UI for either of them. -->
+  <ItemGroup Condition="'$(UseSharedHud)' == 'true' Or '$(UseSharedMenu)' == 'true'">
+    <Reference Include="UnityEngine.UI" HintPath="$(ManagedDir)\UnityEngine.UI.dll" Private="false" />
+    <Reference Include="Unity.TextMeshPro" HintPath="$(ManagedDir)\Unity.TextMeshPro.dll" Private="false" />
+    <Reference Include="UnityEngine.TextCoreTextEngineModule" HintPath="$(ManagedDir)\UnityEngine.TextCoreTextEngineModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UIModule" HintPath="$(ManagedDir)\UnityEngine.UIModule.dll" Private="false" />
+  </ItemGroup>
+
+
+</Project>

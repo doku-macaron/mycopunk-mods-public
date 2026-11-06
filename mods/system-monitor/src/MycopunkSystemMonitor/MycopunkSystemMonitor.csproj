@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MycopunkSystemMonitor</AssemblyName>
+    <RootNamespace>MycopunkSystemMonitor</RootNamespace>
+    <Version>0.1.0</Version>
+    <UseSharedMenu>true</UseSharedMenu>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ManagedDir)\UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(ManagedDir)\UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="Facepunch.Steamworks.Win64" HintPath="$(ManagedDir)\Facepunch.Steamworks.Win64.dll" Private="false" />
+  </ItemGroup>
+</Project>

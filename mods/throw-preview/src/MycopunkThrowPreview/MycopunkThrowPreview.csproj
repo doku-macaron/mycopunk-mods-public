@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Common settings, references and the deploy step: Directory.Build.props / .targets at the root. -->
+
+  <PropertyGroup>
+    <AssemblyName>MycopunkThrowPreview</AssemblyName>
+    <RootNamespace>MycopunkThrowPreview</RootNamespace>
+    <Version>0.2.0</Version>
+    <!-- MODS tab in the options window; also brings in TextMeshPro and UnityEngine.UI. -->
+    <UseSharedMenu>true</UseSharedMenu>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityEngine.PhysicsModule" HintPath="$(ManagedDir)\UnityEngine.PhysicsModule.dll" Private="false" />
+  </ItemGroup>
+
+</Project>

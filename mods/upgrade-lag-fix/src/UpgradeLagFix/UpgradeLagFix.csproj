@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Common settings, references and the deploy step: Directory.Build.props / .targets at the root. -->
+
+  <PropertyGroup>
+    <AssemblyName>UpgradeLagFix</AssemblyName>
+    <RootNamespace>UpgradeLagFix</RootNamespace>
+    <Version>1.1.0</Version>
+    <!-- shared/Menu: the MODS tab in the game's options window. -->
+    <UseSharedMenu>true</UseSharedMenu>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Mono.Cecil" HintPath="$(BepInExCore)\Mono.Cecil.dll" Private="false" />
+  </ItemGroup>
+
+</Project>

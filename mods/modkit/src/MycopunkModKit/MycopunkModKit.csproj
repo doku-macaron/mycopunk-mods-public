@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The shared code (shared/ at the repository root) as its own plugin. Every other mod references it. -->
+
+  <PropertyGroup>
+    <AssemblyName>MycopunkModKit</AssemblyName>
+    <RootNamespace>MycopunkShared</RootNamespace>
+    <Version>1.0.0</Version>
+    <IsModKit>true</IsModKit>
+    <!-- TextMeshPro and UnityEngine.UI for shared/Hud and shared/Menu. -->
+    <UseSharedHud>true</UseSharedHud>
+    <UseSharedMenu>true</UseSharedMenu>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(RepoRoot)shared\**\*.cs" Link="shared\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

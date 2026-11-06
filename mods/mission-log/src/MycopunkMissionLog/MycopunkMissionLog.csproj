@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Common settings, references and the deploy step: Directory.Build.props / .targets at the root. -->
+
+  <PropertyGroup>
+    <AssemblyName>MycopunkMissionLog</AssemblyName>
+    <RootNamespace>MycopunkMissionLog</RootNamespace>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+</Project>

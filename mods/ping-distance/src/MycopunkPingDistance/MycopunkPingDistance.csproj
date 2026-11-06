@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Common settings, references and the deploy step: Directory.Build.props / .targets at the root. -->
+
+  <PropertyGroup>
+    <AssemblyName>MycopunkPingDistance</AssemblyName>
+    <RootNamespace>MycopunkPingDistance</RootNamespace>
+    <Version>0.2.1</Version>
+    <!-- MODS tab in the options window; also brings in TextMeshPro and UnityEngine.UI. -->
+    <UseSharedMenu>true</UseSharedMenu>
+  </PropertyGroup>
+
+</Project>

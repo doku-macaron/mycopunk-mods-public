@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Common settings, references and the deploy step: Directory.Build.props / .targets at the root. -->
+
+  <PropertyGroup>
+    <AssemblyName>DpsChecker</AssemblyName>
+    <RootNamespace>DpsChecker</RootNamespace>
+    <Version>0.2.0</Version>
+    <!-- Plugin.cs carries the assembly version attributes itself (build.ps1 compiles without MSBuild). -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <!-- shared/Hud: TeammateHudLines (the line under the teammate's name). -->
+    <UseSharedHud>true</UseSharedHud>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ManagedDir)\UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(ManagedDir)\UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="Unity.Collections" HintPath="$(ManagedDir)\Unity.Collections.dll" Private="false" />
+  </ItemGroup>
+
+</Project>

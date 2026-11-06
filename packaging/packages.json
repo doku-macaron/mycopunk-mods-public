@@ -1,0 +1,155 @@
+{
+  "namespace": "doku_macaron",
+  "community": "mycopunk",
+  "website_url": "https://github.com/doku-macaron/mycopunk-mods-public",
+  "bepinex": "BepInEx-BepInExPack_Mycopunk-5.4.2403",
+  "packages": [
+    {
+      "folder": "modkit",
+      "name": "ModKit",
+      "description": "Shared library for doku_macaron mods: adds a MODS tab to the Options window (ON/OFF rows, colour pickers, English/Japanese labels) and logs hotkey conflicts. Does nothing on its own.",
+      "categories": [
+        "libraries"
+      ],
+      "modkit": false
+    },
+    {
+      "folder": "upgrade-lag-fix",
+      "name": "UpgradeLagFix",
+      "description": "Removes the freezes when many upgrades are stacked on one gear (Ouroboros/Blitz). Client-side, no gameplay changes: same stats, same apply order, only faster lookups.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    },
+    {
+      "folder": "quick-timers",
+      "name": "QuickTimers",
+      "description": "Shorter fixed waits: skips the startup animations, and (opt-in) shortens the mission drop, start, end and extraction delays. The host's settings apply to the lobby.",
+      "categories": [
+        "mods",
+        "qol"
+      ]
+    },
+    {
+      "folder": "health-numbers",
+      "name": "HealthNumbers",
+      "description": "Shows your health as numbers next to the health bar, and each teammate's health under their name in the teammate HUD.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    },
+    {
+      "folder": "dps-checker",
+      "name": "DPSChecker",
+      "description": "Shows your and your teammates' DPS, best DPS and kills on the HUD. Players who have it share exact values; others are estimated.",
+      "categories": [
+        "mods",
+        "qol"
+      ]
+    },
+    {
+      "folder": "mission-log",
+      "name": "MissionLog",
+      "description": "Writes one line per mission (result, time, mission, threat, modifiers, DPS...) to a TSV file, so you can look back at your runs. Read-only: never touches the save.",
+      "categories": [
+        "mods",
+        "client",
+        "tools"
+      ]
+    },
+    {
+      "folder": "minimap-north-up",
+      "name": "MinimapNorthUp",
+      "description": "Keeps the minimap north-up, like the full-screen map: your arrow turns instead of the map.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    },
+    {
+      "folder": "ping-distance",
+      "name": "PingDistance",
+      "description": "Shows the distance in metres under pings and objective markers.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    },
+    {
+      "folder": "ability-cooldown",
+      "name": "AbilityCooldown",
+      "description": "Shows the seconds until the next charge on ability icons, with charge counts for stacking abilities.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    },
+    {
+      "folder": "throw-preview",
+      "name": "ThrowPreview",
+      "description": "Shows the arc and landing point of grenades (hold to aim, release to throw) and of held objects such as a teammate's parts, coloured when the throw would revive them.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    },
+    {
+      "folder": "xp-numbers",
+      "name": "XPNumbers",
+      "description": "Adds the XP into the current level and the XP the next level needs to the level bars (class screen, build screen and mission results).",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    },
+    {
+      "folder": "weapon-cycle",
+      "name": "WeaponCycle",
+      "description": "Puts a picked-up heavy weapon into the scroll wheel and weapon 1 key cycle, and lets the wheel skip weapons that are out of ammo.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    },
+    {
+      "folder": "system-monitor",
+      "name": "SystemMonitor",
+      "description": "Shows FPS and your ping to the host in a corner of the screen.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    },
+    {
+      "folder": "speed-monitor",
+      "name": "SpeedMonitor",
+      "description": "Shows your current movement speed under the health bar.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    },
+    {
+      "folder": "health-regen-timer",
+      "name": "HealthRegenTimer",
+      "description": "Shows the seconds until health regeneration starts, above the health bar.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
+    }
+  ]
+}

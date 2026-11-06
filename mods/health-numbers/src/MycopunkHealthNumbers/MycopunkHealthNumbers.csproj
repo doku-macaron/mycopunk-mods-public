@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Common settings, references and the deploy step: Directory.Build.props / .targets at the root. -->
+
+  <PropertyGroup>
+    <AssemblyName>MycopunkHealthNumbers</AssemblyName>
+    <RootNamespace>MycopunkHealthNumbers</RootNamespace>
+    <Version>0.4.2</Version>
+    <!-- shared/Menu: the MODS tab in the game's options window (also brings the TMP / UI references). -->
+    <UseSharedMenu>true</UseSharedMenu>
+    <!-- shared/Hud: the teammate line under the name (TeammateHudLines). -->
+    <UseSharedHud>true</UseSharedHud>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ManagedDir)\UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(ManagedDir)\UnityEngine.TextRenderingModule.dll" Private="false" />
+  </ItemGroup>
+
+</Project>
