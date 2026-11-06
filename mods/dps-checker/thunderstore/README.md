@@ -14,10 +14,14 @@ Shows how much damage each player is dealing to enemies (and to the practice tar
 - For teammates without shared values, an estimate from the damage and kills your game can see is shown with a `~` (`DPS ~1.2k  T ~3.4k  K ~12`).
 - If your weapon HUD can't be found, your own line is shown at the top left of the screen instead.
 
+## Similar mods
+
+[Carnometer](https://thunderstore.io/c/mycopunk/p/Sparroh/Carnometer/) and [DpsMeter](https://thunderstore.io/c/mycopunk/p/Coruscnium/DpsMeter/) show your own damage and DPS. DPS Checker is about the whole team: each teammate's DPS, total damage and kills under their name in the teammate HUD, shared exactly between players who have the mod (estimated otherwise). If you only want your own numbers, those mods are a good choice.
+
 ## Requirements
 
 - [BepInExPack_Mycopunk](https://thunderstore.io/c/mycopunk/p/BepInEx/BepInExPack_Mycopunk/)
-- Mycopunk Mod Kit (installed automatically as a dependency)
+- Macaron Core (installed automatically as a dependency)
 
 ## Settings
 

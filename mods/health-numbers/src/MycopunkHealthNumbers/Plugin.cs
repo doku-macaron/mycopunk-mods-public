@@ -55,7 +55,7 @@ namespace MycopunkHealthNumbers
 
     [BepInPlugin(Guid, Name, Version)]
 
-    [BepInDependency(MycopunkShared.ModKit.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
     // Client-side and not a sandbox mod: it only draws text and never changes results.
     // Without this attribute the game treats any BepInEx plugin as a sandbox mod.
     [MycoMod(null, ModFlags.IsClientSide)]
@@ -63,7 +63,7 @@ namespace MycopunkHealthNumbers
     {
         public const string Guid = "t4t5u0.mycopunk.healthnumbers";
         public const string Name = "Mycopunk Health Numbers";
-        public const string Version = "0.4.2";
+        public const string Version = "0.4.3";
 
         internal static ManualLogSource Log;
         internal static Settings Settings;

@@ -7,14 +7,14 @@ using MycopunkShared;
 namespace MycopunkXpNumbers
 {
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.ModKit.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
     // Client-side and not a sandbox mod: it only adds text to the local menus and reads the save.
     [MycoMod(null, ModFlags.IsClientSide)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "t4t5u0.mycopunk.xpnumbers";
         public const string Name = "Mycopunk XP Numbers";
-        public const string Version = "0.2.0";
+        public const string Version = "0.2.1";
 
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled;

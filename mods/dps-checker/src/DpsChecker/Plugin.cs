@@ -9,11 +9,11 @@ using UnityEngine.UI;
 
 [assembly: System.Reflection.AssemblyVersion("0.2.0.0")]
 [assembly: System.Reflection.AssemblyFileVersion("0.2.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.2.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.2.1")]
 
-[BepInPlugin("f1w3.mycopunk.dpschecker", "DPS Checker", "0.2.0")]
+[BepInPlugin("f1w3.mycopunk.dpschecker", "DPS Checker", "0.2.1")]
 
-[BepInDependency(MycopunkShared.ModKit.Guid)]
+[BepInDependency(MycopunkShared.MacaronCore.Guid)]
 [BepInProcess("Mycopunk.exe")]
 [MycoMod(null, ModFlags.IsClientSide)]
 public sealed class Plugin : BaseUnityPlugin

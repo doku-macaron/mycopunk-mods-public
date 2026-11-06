@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>MycopunkSystemMonitor</AssemblyName>
     <RootNamespace>MycopunkSystemMonitor</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <UseSharedMenu>true</UseSharedMenu>
   </PropertyGroup>
   <ItemGroup>

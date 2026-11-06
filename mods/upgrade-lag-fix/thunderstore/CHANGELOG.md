@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Depends on doku_macaron-MacaronCore (the renamed shared library) instead of doku_macaron-ModKit. No other change in game.
+
 ## 1.1.0
 
 - Stacking table: how many copies of an upgrade come before one is answered from a per-gear table.

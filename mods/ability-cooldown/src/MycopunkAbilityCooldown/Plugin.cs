@@ -7,14 +7,14 @@ using MycopunkShared;
 namespace MycopunkAbilityCooldown
 {
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.ModKit.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
     // Client-side and not a sandbox mod: it only adds text to the local HUD.
     [MycoMod(null, ModFlags.IsClientSide)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "t4t5u0.mycopunk.abilitycooldown";
         public const string Name = "Mycopunk Ability Cooldown";
-        public const string Version = "0.2.0";
+        public const string Version = "0.2.1";
 
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled;

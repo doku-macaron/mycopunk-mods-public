@@ -5,7 +5,7 @@ Shortens fixed waits in Mycopunk. By default it only skips the startup animation
 ## Features
 
 - **Faster startup** (on by default): skips the startup logos and intro animations and shows the title while sound banks load.
-- **Shorter mission waits** (each off by default):
+- **Shorter mission waits** (experimental, each off by default):
   - Drop on fixed maps: the fixed 6-second drop delay becomes almost instant. Terrain generation is still waited for.
   - Mission start: the fixed wait after everyone has loaded becomes almost instant.
   - Mission end: the 3.5-second wait before rewards becomes almost instant, but only once the host has confirmed everyone's mission statistics.
@@ -15,11 +15,11 @@ Shortens fixed waits in Mycopunk. By default it only skips the startup animation
 ## Requirements
 
 - [BepInExPack_Mycopunk](https://thunderstore.io/c/mycopunk/p/BepInEx/BepInExPack_Mycopunk/)
-- Mycopunk Mod Kit (installed automatically as a dependency)
+- Macaron Core (installed automatically as a dependency)
 
 ## Settings
 
-The config file is `BepInEx/config/f1w3.mycopunk.quicktimers.cfg`. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Mod Kit).
+The config file is `BepInEx/config/f1w3.mycopunk.quicktimers.cfg`. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Macaron Core).
 
 | Setting | Default | What it does |
 |---|---|---|

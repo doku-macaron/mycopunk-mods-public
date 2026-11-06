@@ -1,6 +1,6 @@
-# Mycopunk Mod Kit
+# Macaron Core
 
-A small library that the other doku_macaron mods for Mycopunk depend on. It changes nothing in the game by itself: it provides shared building blocks so that every mod uses the same version of them. Mod managers install it automatically when you install one of those mods.
+A small library used only by doku_macaron's mods for Mycopunk (it was published as doku_macaron-ModKit before; that package is deprecated and replaced by this one). It changes nothing in the game by itself: it provides shared building blocks so that every mod uses the same version of them. Mod managers install it automatically when you install one of those mods.
 
 ## Features
 
@@ -19,7 +19,7 @@ A small library that the other doku_macaron mods for Mycopunk depend on. It chan
 
 ## Settings
 
-Mod Kit has no settings of its own. The MODS tab only shows the options of the other mods you have installed.
+Macaron Core has no settings of its own. The MODS tab only shows the options of the other mods you have installed.
 
 ## Multiplayer
 
@@ -27,7 +27,7 @@ Client-side only. It only adds a tab to your local Settings window and writes to
 
 ## Notes
 
-- The MODS tab is built from copies of the game's own menu rows. If a game update changes the Settings window so that the tab can't be built, Mod Kit logs a warning and the rest of the game keeps working.
+- The MODS tab is built from copies of the game's own menu rows. If a game update changes the Settings window so that the tab can't be built, Macaron Core logs a warning and the rest of the game keeps working.
 - Keys that the game reads directly (not through its key bindings) can't be seen by the conflict report.
 
 ---

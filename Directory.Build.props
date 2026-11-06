@@ -39,14 +39,14 @@
   </PropertyGroup>
 
   <!--
-    The shared code (shared/, namespace MycopunkShared) is its own plugin, Mycopunk Mod Kit
-    (mods/modkit). Every mod references it (not copied next to the mod) and declares
-    [BepInDependency(MycopunkShared.ModKit.Guid)]. A project opts out with <NoModKit>true</NoModKit>.
+    The shared code (shared/, namespace MycopunkShared) is its own plugin, Macaron Core
+    (mods/macaron-core). Every mod references it (not copied next to the mod) and declares
+    [BepInDependency(MycopunkShared.MacaronCore.Guid)]. A project opts out with <NoMacaronCore>true</NoMacaronCore>.
     shared/Hud and shared/Menu need TextMeshPro and UnityEngine.UI: <UseSharedHud> / <UseSharedMenu> still add those
     references for mods that use the HUD lines or TMP themselves.
   -->
-  <ItemGroup Condition="'$(IsModKit)' != 'true' And '$(NoModKit)' != 'true'">
-    <ProjectReference Include="$(MSBuildThisFileDirectory)mods\modkit\src\MycopunkModKit\MycopunkModKit.csproj" Private="false" />
+  <ItemGroup Condition="'$(IsMacaronCore)' != 'true' And '$(NoMacaronCore)' != 'true'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)mods\macaron-core\src\MacaronCore\MacaronCore.csproj" Private="false" />
   </ItemGroup>
 
   <!-- TextMeshPro and UnityEngine.UI for either of them. -->

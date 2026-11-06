@@ -7,14 +7,14 @@ using MycopunkShared;
 namespace MycopunkPingDistance
 {
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.ModKit.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
     // Client-side and not a sandbox mod: it only adds text to the local HUD.
     [MycoMod(null, ModFlags.IsClientSide)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "t4t5u0.mycopunk.pingdistance";
         public const string Name = "Mycopunk Ping Distance";
-        public const string Version = "0.2.1";
+        public const string Version = "0.2.2";
 
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> PingDistance;

@@ -1,15 +1,17 @@
 # Uploads the zips made by packaging/package.ps1 to Thunderstore with tcli (Thunderstore CLI).
 # Usage:
-#   pwsh packaging/publish.ps1 -Only ModKit,ThrowPreview            # dry run: shows what would be uploaded
-#   pwsh packaging/publish.ps1 -Only ModKit,ThrowPreview -Publish   # uploads
+#   pwsh packaging/publish.ps1 -Only MacaronCore,ThrowPreview            # dry run: shows what would be uploaded
+#   pwsh packaging/publish.ps1 -Only MacaronCore,ThrowPreview -Publish   # uploads
 # Needs: tcli (dotnet tool install -g tcli) and the team's service-account token in $env:TCLI_AUTH_TOKEN.
-# The token is never written to disk. Upload ModKit first: the others depend on it.
+# The token is never written to disk. Upload MacaronCore first: the others depend on it.
 param(
     [Parameter(Mandatory = $true)][string[]]$Only,
     [switch]$Publish
 )
 
 $ErrorActionPreference = "Stop"
+# "pwsh -File ... -Only A,B" passes one string "A,B": split it.
+$Only = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $root = Split-Path -Parent $PSScriptRoot
 $spec = Get-Content (Join-Path $root "packaging/packages.json") -Raw | ConvertFrom-Json
 $dist = Join-Path $root "dist"
@@ -19,7 +21,7 @@ if ($Publish) {
     if (-not (Get-Command tcli -ErrorAction SilentlyContinue)) { throw "tcli not found (dotnet tool install -g tcli)." }
 }
 
-# Upload in the order of packages.json (ModKit first), whatever the order of -Only.
+# Upload in the order of packages.json (MacaronCore first), whatever the order of -Only.
 foreach ($pkg in $spec.packages) {
     if ($Only -notcontains $pkg.name) { continue }
     $zip = Get-ChildItem $dist -Filter "$($spec.namespace)-$($pkg.name)-*.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1

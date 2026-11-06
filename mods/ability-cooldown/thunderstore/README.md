@@ -16,11 +16,11 @@ Shows the cooldown of your abilities as seconds on their icons at the bottom of 
 ## Requirements
 
 - [BepInExPack_Mycopunk](https://thunderstore.io/c/mycopunk/p/BepInEx/BepInExPack_Mycopunk/)
-- Mycopunk Mod Kit (installed automatically as a dependency)
+- Macaron Core (installed automatically as a dependency)
 
 ## Settings
 
-The config file is `BepInEx/config/t4t5u0.mycopunk.abilitycooldown.cfg`. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Mod Kit) and take effect at once.
+The config file is `BepInEx/config/t4t5u0.mycopunk.abilitycooldown.cfg`. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Macaron Core) and take effect at once.
 
 | Setting | Default | What it does |
 |---|---|---|

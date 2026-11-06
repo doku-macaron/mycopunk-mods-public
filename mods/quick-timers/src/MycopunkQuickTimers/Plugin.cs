@@ -12,7 +12,7 @@ namespace MycopunkQuickTimers
     /// f1w3's.
     /// </summary>
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.ModKit.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
     // The mission timing options can affect the whole lobby when enabled by the host.
     // Without this attribute the game treats any BepInEx plugin as a sandbox mod.
     [MycoMod(null, ModFlags.IsClientSide)]
@@ -20,7 +20,7 @@ namespace MycopunkQuickTimers
     {
         public const string Guid = "f1w3.mycopunk.quicktimers";
         public const string Name = "Mycopunk Quick Timers";
-        public const string Version = "0.1.0";
+        public const string Version = "0.1.1";
 
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> FastDrop, FastMissionStart, FastMissionEnd, FastExtraction;

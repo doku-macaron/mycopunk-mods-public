@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LABELS = {
-    "ModKit": "KIT", "UpgradeLagFix": "LAG", "QuickTimers": "FAST", "HealthNumbers": "HP", "DPSChecker": "DPS",
+    "MacaronCore": "CORE", "UpgradeLagFix": "LAG", "QuickTimers": "FAST", "HealthNumbers": "HP", "DPSChecker": "DPS",
     "MissionLog": "LOG", "MinimapNorthUp": "N", "PingDistance": "m", "AbilityCooldown": "CD",
     "ThrowPreview": "ARC", "XPNumbers": "XP", "WeaponCycle": "123", "SystemMonitor": "FPS",
     "SpeedMonitor": "m/s", "HealthRegenTimer": "REGEN",

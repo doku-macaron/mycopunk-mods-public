@@ -3,10 +3,10 @@
   <!-- The shared code (shared/ at the repository root) as its own plugin. Every other mod references it. -->
 
   <PropertyGroup>
-    <AssemblyName>MycopunkModKit</AssemblyName>
+    <AssemblyName>MacaronCore</AssemblyName>
     <RootNamespace>MycopunkShared</RootNamespace>
     <Version>1.0.0</Version>
-    <IsModKit>true</IsModKit>
+    <IsMacaronCore>true</IsMacaronCore>
     <!-- TextMeshPro and UnityEngine.UI for shared/Hud and shared/Menu. -->
     <UseSharedHud>true</UseSharedHud>
     <UseSharedMenu>true</UseSharedMenu>

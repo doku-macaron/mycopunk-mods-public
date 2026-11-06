@@ -5,13 +5,13 @@
   "bepinex": "BepInEx-BepInExPack_Mycopunk-5.4.2403",
   "packages": [
     {
-      "folder": "modkit",
-      "name": "ModKit",
-      "description": "Shared library for doku_macaron mods: adds a MODS tab to the Options window (ON/OFF rows, colour pickers, English/Japanese labels) and logs hotkey conflicts. Does nothing on its own.",
+      "folder": "macaron-core",
+      "name": "MacaronCore",
+      "description": "Shared library used only by doku_macaron's Mycopunk mods: adds a MODS tab to the Settings window (ON/OFF rows, colour pickers, English/Japanese labels) and logs hotkey conflicts. Replaces doku_macaron-ModKit.",
       "categories": [
         "libraries"
       ],
-      "modkit": false
+      "core": true
     },
     {
       "folder": "upgrade-lag-fix",
@@ -59,16 +59,6 @@
         "mods",
         "client",
         "tools"
-      ]
-    },
-    {
-      "folder": "minimap-north-up",
-      "name": "MinimapNorthUp",
-      "description": "Keeps the minimap north-up, like the full-screen map: your arrow turns instead of the map.",
-      "categories": [
-        "mods",
-        "client",
-        "qol"
       ]
     },
     {
@@ -125,16 +115,6 @@
       "folder": "system-monitor",
       "name": "SystemMonitor",
       "description": "Shows FPS and your ping to the host in a corner of the screen.",
-      "categories": [
-        "mods",
-        "client",
-        "qol"
-      ]
-    },
-    {
-      "folder": "speed-monitor",
-      "name": "SpeedMonitor",
-      "description": "Shows your current movement speed under the health bar.",
       "categories": [
         "mods",
         "client",

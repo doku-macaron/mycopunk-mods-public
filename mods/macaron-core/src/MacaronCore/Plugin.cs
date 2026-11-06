@@ -3,16 +3,16 @@ using HarmonyLib;
 
 namespace MycopunkShared
 {
-    [BepInPlugin(ModKit.Guid, ModKit.Name, ModKit.Version)]
+    [BepInPlugin(MacaronCore.Guid, MacaronCore.Name, MacaronCore.Version)]
     // Client-side and not a sandbox mod: it adds a tab to the local options window and logs hotkey conflicts.
     [MycoMod(null, ModFlags.IsClientSide)]
-    public class ModKitPlugin : BaseUnityPlugin
+    public class MacaronCorePlugin : BaseUnityPlugin
     {
         private void Awake()
         {
-            ModsMenu.Install(new Harmony(ModKit.Guid), this);
+            ModsMenu.Install(new Harmony(MacaronCore.Guid), this);
             Hotkeys.ReportConflicts(this);
-            Logger.LogInfo(ModKit.Name + " " + ModKit.Version + " loaded.");
+            Logger.LogInfo(MacaronCore.Name + " " + MacaronCore.Version + " loaded.");
         }
     }
 }

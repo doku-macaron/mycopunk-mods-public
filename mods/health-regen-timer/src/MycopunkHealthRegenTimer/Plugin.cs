@@ -12,8 +12,8 @@ using UnityEngine.UI;
 
 namespace MycopunkHealthRegenTimer
 {
-    [BepInPlugin(Guid, "Mycopunk Health Regen Timer", "0.1.0")]
-    [BepInDependency(MycopunkShared.ModKit.Guid)]
+    [BepInPlugin(Guid, "Mycopunk Health Regen Timer", "0.1.1")]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
     [MycoMod(null, ModFlags.IsClientSide)]
     public sealed class Plugin : BaseUnityPlugin
     {

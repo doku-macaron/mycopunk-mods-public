@@ -10,8 +10,8 @@ using UnityEngine;
 
 namespace MycopunkSystemMonitor
 {
-    [BepInPlugin("f1w3.mycopunk.systemmonitor", "Mycopunk System Monitor", "0.1.0")]
-    [BepInDependency(MycopunkShared.ModKit.Guid)]
+    [BepInPlugin("f1w3.mycopunk.systemmonitor", "Mycopunk System Monitor", "0.1.1")]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
     [MycoMod(null, ModFlags.IsClientSide)]
     public class Plugin : BaseUnityPlugin
     {

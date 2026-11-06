@@ -5,7 +5,7 @@
   <PropertyGroup>
     <AssemblyName>DpsChecker</AssemblyName>
     <RootNamespace>DpsChecker</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <!-- Plugin.cs carries the assembly version attributes itself (build.ps1 compiles without MSBuild). -->
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <!-- shared/Hud: TeammateHudLines (the line under the teammate's name). -->

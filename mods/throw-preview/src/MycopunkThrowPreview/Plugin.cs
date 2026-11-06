@@ -9,14 +9,14 @@ using UnityEngine;
 namespace MycopunkThrowPreview
 {
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.ModKit.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
     // Client-side and not a sandbox mod: it draws on the local HUD and only delays the local player's own throw.
     [MycoMod(null, ModFlags.IsClientSide)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "t4t5u0.mycopunk.throwpreview";
         public const string Name = "Mycopunk Throw Preview";
-        public const string Version = "0.2.0";
+        public const string Version = "0.2.1";
 
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> GrenadeAim;

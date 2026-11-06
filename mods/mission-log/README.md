@@ -17,7 +17,7 @@ Keeps a record of your missions. After every mission it adds one row to `BepInEx
 ## Requirements
 
 - [BepInExPack_Mycopunk](https://thunderstore.io/c/mycopunk/p/BepInEx/BepInExPack_Mycopunk/)
-- Mycopunk Mod Kit (installed automatically as a dependency)
+- Macaron Core (installed automatically as a dependency)
 - Optional: DPS Checker, to fill in the DPS and teammate columns
 
 ## Settings

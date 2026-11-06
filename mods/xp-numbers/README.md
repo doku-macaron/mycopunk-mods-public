@@ -6,17 +6,17 @@ Adds the actual XP numbers to the level bars: how much XP you have in the curren
 
 - **Class screen** (right after pressing TAB): the numbers next to the level, slightly smaller.
 - **Build screen** (weapons, gear and classes): the numbers to the right of the level under the bar.
-- **Mission results** (the XP page): the numbers under the right end of each bar. They count up together with the bar while it fills.
+- **Mission results** (the XP page, experimental): the numbers under the right end of each bar. They count up together with the bar while it fills. Its position and size have not yet been checked on every screen size; `Results.FontScale` changes the size.
 - Hidden at max level (where the game shows "∞").
 
 ## Requirements
 
 - [BepInExPack_Mycopunk](https://thunderstore.io/c/mycopunk/p/BepInEx/BepInExPack_Mycopunk/)
-- Mycopunk Mod Kit (installed automatically as a dependency)
+- Macaron Core (installed automatically as a dependency)
 
 ## Settings
 
-The config file is `BepInEx/config/t4t5u0.mycopunk.xpnumbers.cfg`. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Mod Kit).
+The config file is `BepInEx/config/t4t5u0.mycopunk.xpnumbers.cfg`. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Macaron Core).
 
 | Setting | Default | What it does |
 |---|---|---|

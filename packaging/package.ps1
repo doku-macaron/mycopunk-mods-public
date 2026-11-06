@@ -1,15 +1,17 @@
 # Builds the Thunderstore packages listed in packaging/packages.json into dist/.
-# Usage: pwsh packaging/package.ps1 [-Only ThrowPreview,ModKit] [-GamePath "<path to Mycopunk>"]
+# Usage: pwsh packaging/package.ps1 [-Only ThrowPreview,MacaronCore] [-GamePath "<path to Mycopunk>"]
 #
 # Each package: mods/<folder>/thunderstore/{README.md, CHANGELOG.md, icon.png} + a generated manifest.json
-# (version from the csproj <Version>) + plugins/<AssemblyName>/<AssemblyName>.dll. Every package except ModKit
-# depends on doku_macaron-ModKit at the kit's current version.
+# (version from the csproj <Version>) + plugins/<AssemblyName>/<AssemblyName>.dll. Every package except MacaronCore
+# depends on doku_macaron-MacaronCore at its current version.
 param(
     [string[]]$Only = @(),
     [string]$GamePath = ""
 )
 
 $ErrorActionPreference = "Stop"
+# "pwsh -File ... -Only A,B" passes one string "A,B": split it.
+$Only = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $root = Split-Path -Parent $PSScriptRoot
 $spec = Get-Content (Join-Path $root "packaging/packages.json") -Raw | ConvertFrom-Json
 $dotnet = if (Get-Command dotnet -ErrorAction SilentlyContinue) { "dotnet" } else { "C:\Program Files\dotnet\dotnet.exe" }
@@ -29,8 +31,8 @@ function Get-Project([string]$folder) {
     [pscustomobject]@{ Path = $proj.FullName; Version = $version; Assembly = $assembly }
 }
 
-$kit = Get-Project "modkit"
-$kitDependency = "$($spec.namespace)-ModKit-$($kit.Version)"
+$core = Get-Project "macaron-core"
+$coreDependency = "$($spec.namespace)-MacaronCore-$($core.Version)"
 
 foreach ($pkg in $spec.packages) {
     if ($Only.Count -gt 0 -and $Only -notcontains $pkg.name) { continue }
@@ -44,8 +46,7 @@ foreach ($pkg in $spec.packages) {
     $plugin = Get-ChildItem (Split-Path $p.Path) -Filter Plugin.cs | Select-Object -First 1
     if ($plugin) {
         $src = Get-Content $plugin.FullName -Raw
-        $kitVersionFile = Join-Path $root "shared/ModKit.cs"
-        if ($pkg.name -eq "ModKit") { $src = Get-Content $kitVersionFile -Raw }
+        if ($pkg.core -eq $true) { $src = Get-Content (Join-Path $root "shared/MacaronCore.cs") -Raw }
         if ($src -notmatch [regex]::Escape('"' + $p.Version + '"')) {
             Write-Warning "$($pkg.name): version $($p.Version) not found in $($plugin.Name) (BepInPlugin version may differ)."
         }
@@ -59,7 +60,7 @@ foreach ($pkg in $spec.packages) {
     if (-not (Test-Path $dll)) { throw "Built DLL not found: $dll" }
 
     $deps = @($spec.bepinex)
-    if ($pkg.modkit -ne $false) { $deps += $kitDependency }
+    if ($pkg.core -ne $true) { $deps += $coreDependency }
     $manifest = [ordered]@{
         name           = $pkg.name
         version_number = $p.Version

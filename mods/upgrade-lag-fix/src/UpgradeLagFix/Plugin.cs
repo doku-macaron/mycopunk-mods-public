@@ -9,7 +9,7 @@ using UnityEngine.InputSystem;
 namespace UpgradeLagFix
 {
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.ModKit.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
     // Client-side, no gameplay changes (same stats, same apply order, only faster lookups).
     // Without this attribute the game treats any BepInEx plugin as a sandbox mod.
     [MycoMod(null, ModFlags.IsClientSide)]
@@ -17,7 +17,7 @@ namespace UpgradeLagFix
     {
         public const string Guid = "t4t5u0.UpgradeLagFix";
         public const string Name = "Upgrade Lag Fix";
-        public const string Version = "1.1.0";
+        public const string Version = "1.1.1";
 
         internal static ManualLogSource Log;
 

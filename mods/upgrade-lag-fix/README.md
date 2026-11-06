@@ -21,11 +21,11 @@ The game looks up upgrades with linear searches and re-checks and re-sorts the e
 ## Requirements
 
 - [BepInExPack_Mycopunk](https://thunderstore.io/c/mycopunk/p/BepInEx/BepInExPack_Mycopunk/)
-- Mycopunk Mod Kit (installed automatically as a dependency)
+- Macaron Core (installed automatically as a dependency)
 
 ## Settings
 
-The config file is `BepInEx/config/t4t5u0.UpgradeLagFix.cfg`. The defaults are what you want for normal play. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Mod Kit) and take effect at once.
+The config file is `BepInEx/config/t4t5u0.UpgradeLagFix.cfg`. The defaults are what you want for normal play. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Macaron Core) and take effect at once.
 
 | Setting | Default | What it does |
 |---|---|---|

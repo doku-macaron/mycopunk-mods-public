@@ -11,11 +11,11 @@ Shows how long it will be until your health starts regenerating, as a small time
 ## Requirements
 
 - [BepInExPack_Mycopunk](https://thunderstore.io/c/mycopunk/p/BepInEx/BepInExPack_Mycopunk/)
-- Mycopunk Mod Kit (installed automatically as a dependency)
+- Macaron Core (installed automatically as a dependency)
 
 ## Settings
 
-The config file is `BepInEx/config/f1w3.mycopunk.healthregentimer.cfg`. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Mod Kit) and take effect at once.
+The config file is `BepInEx/config/f1w3.mycopunk.healthregentimer.cfg`. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Macaron Core) and take effect at once.
 
 | Setting | Default | What it does |
 |---|---|---|

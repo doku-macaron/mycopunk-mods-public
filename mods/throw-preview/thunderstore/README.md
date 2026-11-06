@@ -8,17 +8,17 @@ Draws the arc of what you are about to throw. For grenades, hold the grenade key
 - The arc uses the game's own projectile step, so gravity, bounces off walls and range match the real grenade. A marker shows where it will go off.
 - The throw itself (and the throw animation other players see) is the game's own, started when you release the key.
 - **Held objects:** while you charge a throw, the arc and landing point follow the charge.
-- **Revive hint:** when a thrown teammate part would join another of that teammate's parts (which revives them), the arc turns green and stops where they would connect.
+- **Revive hint (experimental):** when a thrown teammate part would join another of that teammate's parts (which revives them), the arc turns green and stops where they would connect. It follows the game's own rule (part centres closer than 2 m), but has not yet been checked during a real revive.
 - Dashed line with adjustable colour, thickness and dash length.
 
 ## Requirements
 
 - [BepInExPack_Mycopunk](https://thunderstore.io/c/mycopunk/p/BepInEx/BepInExPack_Mycopunk/)
-- Mycopunk Mod Kit (installed automatically as a dependency)
+- Macaron Core (installed automatically as a dependency)
 
 ## Settings
 
-The config file is `BepInEx/config/t4t5u0.mycopunk.throwpreview.cfg`. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Mod Kit) and take effect at once. For colours, the MODS tab picks the hue; the opacity stays as in the config.
+The config file is `BepInEx/config/t4t5u0.mycopunk.throwpreview.cfg`. Settings marked \* can also be changed in game under Settings → MODS (the MODS tab is provided by Macaron Core) and take effect at once. For colours, the MODS tab picks the hue; the opacity stays as in the config.
 
 | Setting | Default | What it does |
 |---|---|---|
