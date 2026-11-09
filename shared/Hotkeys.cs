@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using BepInEx;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
@@ -89,16 +88,16 @@ namespace MycopunkShared
         {
             // The chainloader runs every Awake before the first frame, so one frame later all plugins are in.
             yield return null;
-            var controlsField = typeof(global::PlayerInput).GetField("_controls", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
             float start = Time.realtimeSinceStartup;
-            // Do not call PlayerInput.Controls: it would create the game's input early. Wait for the game to do it.
-            while (controlsField != null && controlsField.GetValue(null) == null && Time.realtimeSinceStartup - start < GameInputTimeout)
+            // Do not call PlayerInput.Controls: it would create the game's input early. Wait for the game to do it
+            // (the backing field _controls stays null until then).
+            while (global::PlayerInput._controls == null && Time.realtimeSinceStartup - start < GameInputTimeout)
                 yield return new WaitForSecondsRealtime(1f);
 
             var log = BepInEx.Logging.Logger.CreateLogSource("Hotkeys");
             try
             {
-                Report(log, controlsField?.GetValue(null));
+                Report(log, global::PlayerInput._controls);
             }
             catch (Exception e)
             {
@@ -106,7 +105,7 @@ namespace MycopunkShared
             }
         }
 
-        private static void Report(ManualLogSource log, object controls)
+        private static void Report(ManualLogSource log, Pigeon.Movement.PlayerControls controls)
         {
             var mods = new List<Binding>();
             foreach (var line in Registry())
@@ -193,14 +192,14 @@ namespace MycopunkShared
             }
         }
 
-        private static List<Binding> GameBindings(object controls, out string note)
+        private static List<Binding> GameBindings(Pigeon.Movement.PlayerControls controls, out string note)
         {
             var result = new List<Binding>();
             note = "";
             var keyboard = Keyboard.current;
             if (controls == null) { note = " (the game's input was not created yet)"; return result; }
             if (keyboard == null) { note = " (no keyboard)"; return result; }
-            var asset = controls.GetType().GetProperty("asset")?.GetValue(controls) as InputActionAsset;
+            var asset = controls.asset;
             if (asset == null) { note = " (PlayerControls.asset not found)"; return result; }
             foreach (var map in asset.actionMaps)
                 foreach (var action in map.actions)

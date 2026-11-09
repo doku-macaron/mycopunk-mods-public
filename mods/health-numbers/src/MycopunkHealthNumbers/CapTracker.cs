@@ -13,7 +13,6 @@ namespace MycopunkHealthNumbers
     /// </summary>
     internal static class CapTracker
     {
-        private static AccessTools.FieldRef<Player, float> _capRef;
         private static float _cap = 1f;
         private static int _frame = -1;
 
@@ -23,14 +22,7 @@ namespace MycopunkHealthNumbers
         {
             try
             {
-                var target = AccessTools.Method(typeof(Player), "UpdateTarget");
-                if (target == null || AccessTools.Field(typeof(Player), "tempMaxHealthCap") == null)
-                {
-                    Plugin.Log.LogWarning("Player.UpdateTarget or Player.tempMaxHealthCap was not found; the max-health cap is not shown.");
-                    return;
-                }
-                _capRef = AccessTools.FieldRefAccess<Player, float>("tempMaxHealthCap");
-                harmony.Patch(target, prefix: new HarmonyMethod(typeof(CapTracker), nameof(Prefix)));
+                harmony.CreateClassProcessor(typeof(UpdateTargetPatch)).Patch();
                 Installed = true;
             }
             catch (Exception e)
@@ -39,12 +31,17 @@ namespace MycopunkHealthNumbers
             }
         }
 
-        private static void Prefix(Player __instance)
+        [HarmonyPatch(typeof(Player), nameof(Player.UpdateTarget))]
+        private static class UpdateTargetPatch
         {
-            if (!ReferenceEquals(__instance, Player.LocalPlayer))
-                return;
-            _cap = _capRef(__instance);
-            _frame = Time.frameCount;
+            [HarmonyPrefix]
+            private static void Prefix(Player __instance)
+            {
+                if (!ReferenceEquals(__instance, Player.LocalPlayer))
+                    return;
+                _cap = __instance.tempMaxHealthCap;
+                _frame = Time.frameCount;
+            }
         }
 
         /// <summary>The cap as a fraction of max health (1 = no cap). Stale values (UpdateTarget not running) count as 1.</summary>

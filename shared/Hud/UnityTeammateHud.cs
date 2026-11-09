@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Reflection;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -12,15 +11,11 @@ namespace MycopunkShared
     /// </summary>
     public sealed class UnityTeammateHud : ITeammateHud
     {
-        private const BindingFlags Fields = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
-        private static readonly FieldInfo NameField = typeof(TeammateHUD).GetField("nameText", Fields);
-        private static readonly FieldInfo ClassField = typeof(TeammateHUD).GetField("classText", Fields);
-        private static readonly FieldInfo TitleField = typeof(TeammateHUD).GetField("titleText", Fields);
-        private static readonly FieldInfo LoadingField = typeof(TeammateHUD).GetField("loadingBarParent", Fields);
-        private static readonly FieldInfo OffsetField = typeof(TeammateHUD).GetField("offset", Fields);
-
-        /// <summary>False when a TeammateHUD field this needs is missing (game update).</summary>
-        public static bool Available => NameField != null && OffsetField != null;
+        /// <summary>
+        /// Kept for the mods that check it. The TeammateHUD fields this needs are used directly (publicized game
+        /// assembly): a game update that removes one makes the calls throw MissingFieldException instead, so this is always true.
+        /// </summary>
+        public static bool Available => true;
 
         /// <summary>
         /// The line <paramref name="id"/> under the teammate's name (created if needed). Call from a
@@ -48,7 +43,7 @@ namespace MycopunkShared
         private static UnityTeammateHud For(TeammateHUD hud)
         {
             if (!Available || hud == null) return null;
-            var name = NameField.GetValue(hud) as TextMeshProUGUI;
+            var name = hud.nameText;
             return name != null ? new UnityTeammateHud(hud, name) : null;
         }
 
@@ -74,8 +69,8 @@ namespace MycopunkShared
 
         public float Offset
         {
-            get { return (float)OffsetField.GetValue(hud); }
-            set { OffsetField.SetValue(hud, value); }
+            get { return hud.offset; }
+            set { hud.offset = value; }
         }
 
         public string Marker
@@ -152,8 +147,8 @@ namespace MycopunkShared
         {
             if (dy == 0) return;
             var candidates = new List<RectTransform>();
-            foreach (var field in new[] { ClassField, TitleField, LoadingField })
-                if (field != null && field.GetValue(hud) is Graphic g && g != null) candidates.Add(g.rectTransform);
+            foreach (Graphic g in new Graphic[] { hud.classText, hud.titleText, hud.loadingBarParent })
+                if (g != null) candidates.Add(g.rectTransform);
             foreach (var item in TeammateHudLines.TopLevel(candidates, name.rectTransform, (a, b) => a.IsChildOf(b)))
                 item.anchoredPosition += new Vector2(0, dy);
         }

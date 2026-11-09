@@ -54,50 +54,61 @@ namespace UpgradeLagFix
             public int SkinsVer;
         }
 
+        // Matched by name on any collection type (List, Dictionary, HashSet, ...). An indexer setter has no
+        // C# name, so set_Item stays a string.
         private static readonly HashSet<string> RemovingMethods = new HashSet<string>
         {
-            "Remove", "RemoveAt", "RemoveAll", "RemoveRange", "Clear", "set_Item", "TrimExcess",
+            nameof(List<object>.Remove), nameof(List<object>.RemoveAt), nameof(List<object>.RemoveAll),
+            nameof(List<object>.RemoveRange), nameof(List<object>.Clear), "set_Item", nameof(List<object>.TrimExcess),
         };
+
+        private static string FieldKey(string type, string field) => type + "::" + field;
 
         private static readonly HashSet<string> WatchedFields = new HashSet<string>
         {
-            "PlayerData::data", "PlayerData::_instance", "UpgradeInfo::Instances", "UpgradeInstance::id",
+            FieldKey(nameof(PlayerData), nameof(PlayerData.data)), FieldKey(nameof(PlayerData), nameof(PlayerData._instance)),
+            FieldKey(nameof(UpgradeInfo), nameof(UpgradeInfo.Instances)), FieldKey(nameof(UpgradeInstance), nameof(UpgradeInstance.id)),
         };
 
         // Extra state that PrepareUpgrades' check (GetUpgrade() == null || IsDestroyed()) depends on.
         // These only bump the prepare generation (PrepGen), not the cleanup generation.
         private static readonly HashSet<string> PrepFields = new HashSet<string>
         {
-            "PlayerData::collectedGear", "PlayerData::upgradeIDs", "GearData::gear",
-            "UpgradeInstance::gearID", "UpgradeInstance::upgradeIDv2", "UpgradeInfo::idV2",
+            FieldKey(nameof(PlayerData), nameof(PlayerData.collectedGear)), FieldKey(nameof(PlayerData), nameof(PlayerData.upgradeIDs)),
+            FieldKey(nameof(PlayerData.GearData), nameof(PlayerData.GearData.gear)),
+            FieldKey(nameof(UpgradeInstance), nameof(UpgradeInstance.gearID)), FieldKey(nameof(UpgradeInstance), nameof(UpgradeInstance.upgradeIDv2)),
+            FieldKey(nameof(UpgradeInfo), nameof(UpgradeInfo.idV2)),
             // Sort keys of UpgradeEquipData.CompareTo that live outside the list. StackingMemo relies
             // on the list staying in sorted order while its _version is unchanged.
-            "UpgradeInstance::timeEquipped", "Upgrade::_name", "Upgrade::<Priority>k__BackingField",
+            FieldKey(nameof(UpgradeInstance), nameof(UpgradeInstance.timeEquipped)), FieldKey(nameof(Upgrade), nameof(Upgrade._name)),
+            // The backing field of the auto-property Upgrade.Priority is compiler-generated, so C# cannot name it.
+            FieldKey(nameof(Upgrade), "<Priority>k__BackingField"),
         };
 
         // GetUpgradeInfo returns the first matching UpgradeInfo, so reordering a List<UpgradeInfo> matters too.
         private static readonly HashSet<string> OrderMethods = new HashSet<string>
         {
-            "Sort", "Reverse", "Insert", "InsertRange",
+            nameof(List<object>.Sort), nameof(List<object>.Reverse), nameof(List<object>.Insert), nameof(List<object>.InsertRange),
         };
 
-        private static readonly HashSet<string> CleanupTypeNames = new HashSet<string> { "UpgradeInstance", "UpgradeInfo" };
-        private static readonly HashSet<string> PrepTypeNames = new HashSet<string> { "PlayerData/GearData", "Upgrade" };
-        private static readonly HashSet<string> InfoTypeNames = new HashSet<string> { "UpgradeInfo" };
+        // Cecil full names (nested types use '/').
+        private static readonly HashSet<string> CleanupTypeNames = new HashSet<string> { nameof(UpgradeInstance), nameof(UpgradeInfo) };
+        private static readonly HashSet<string> PrepTypeNames = new HashSet<string> { nameof(PlayerData) + "/" + nameof(PlayerData.GearData), nameof(Upgrade) };
+        private static readonly HashSet<string> InfoTypeNames = new HashSet<string> { nameof(UpgradeInfo) };
 
         private const int KindNone = 0, KindCleanup = 1, KindPrepare = 2;
 
+        // The getters of IGear.ActiveUpgrades / ActiveSkins and their implementations, as they appear in IL.
         private static readonly HashSet<string> ScratchListGetters = new HashSet<string>
         {
-            "get_ActiveUpgrades", "get_ActiveSkins",
+            "get_" + nameof(IGear.ActiveUpgrades), "get_" + nameof(IGear.ActiveSkins),
         };
 
-        private static readonly ConditionalWeakTable<object, Memo> Memos = new ConditionalWeakTable<object, Memo>();
+        private static readonly ConditionalWeakTable<PlayerData.GearData, Memo> Memos = new ConditionalWeakTable<PlayerData.GearData, Memo>();
 
-        private static AccessTools.FieldRef<object, List<PlayerData.UpgradeEquipData>> _upsRef;
-        private static AccessTools.FieldRef<object, List<PlayerData.UpgradeEquipData>> _skinsRef;
+        // List<T>._version is a private field of mscorlib (not publicized), so it is read through a field ref.
+        // Set in Setup, so a missing field only disables this feature.
         private static AccessTools.FieldRef<List<PlayerData.UpgradeEquipData>, int> _versionRef;
-        private static AccessTools.FieldRef<PlayerData, Dictionary<int, List<UpgradeInfo>>> _dataRef;
 
         private static readonly MethodInfo BumpMethod = AccessTools.Method(typeof(CleanupMemo), nameof(Bump));
         private static readonly MethodInfo BumpPrepMethod = AccessTools.Method(typeof(CleanupMemo), nameof(BumpPrep));
@@ -124,11 +135,7 @@ namespace UpgradeLagFix
             var log = Plugin.Log;
             try
             {
-                var gearData = AccessTools.Inner(typeof(PlayerData), "GearData");
-                _upsRef = AccessTools.FieldRefAccess<List<PlayerData.UpgradeEquipData>>(gearData, "equippedUpgrades");
-                _skinsRef = AccessTools.FieldRefAccess<List<PlayerData.UpgradeEquipData>>(gearData, "equippedSkins");
                 _versionRef = AccessTools.FieldRefAccess<List<PlayerData.UpgradeEquipData>, int>("_version");
-                _dataRef = AccessTools.FieldRefAccess<PlayerData, Dictionary<int, List<UpgradeInfo>>>("data");
 
                 var sw = Stopwatch.StartNew();
                 var mutators = FindMutators(out var unpatchable, out var unpatchablePrep);
@@ -142,27 +149,23 @@ namespace UpgradeLagFix
                 if (!PrepAvailable)
                     log.LogWarning("Prepare memo disabled: cannot patch " + string.Join(", ", unpatchablePrep));
 
-                var transpiler = new HarmonyMethod(typeof(CleanupMemo), nameof(Instrument_Transpiler));
-                foreach (var m in mutators)
+                InstrumentPatch.Targets = mutators;
+                try
                 {
-                    try
-                    {
-                        harmony.Patch(m, transpiler: transpiler);
-                        InstrumentedMethods++;
-                    }
-                    catch (Exception e)
-                    {
-                        log.LogWarning("Cleanup/prepare memo disabled: failed to patch " + m.DeclaringType?.Name + "." + m.Name + ": " + e.Message);
-                        _gen++;
-                        _prepGen++;
-                        PrepAvailable = false;
-                        return;
-                    }
+                    harmony.CreateClassProcessor(typeof(InstrumentPatch)).Patch();
+                    InstrumentedMethods = mutators.Count;
+                }
+                catch (Exception e)
+                {
+                    // The exception message names the method that failed.
+                    log.LogWarning("Cleanup/prepare memo disabled: failed to patch: " + e.Message);
+                    _gen++;
+                    _prepGen++;
+                    PrepAvailable = false;
+                    return;
                 }
 
-                harmony.Patch(AccessTools.Method(gearData, "Cleanup"),
-                    prefix: new HarmonyMethod(typeof(CleanupMemo), nameof(Cleanup_Prefix)),
-                    finalizer: new HarmonyMethod(typeof(CleanupMemo), nameof(Cleanup_Finalizer)));
+                harmony.CreateClassProcessor(typeof(CleanupPatch)).Patch();
 
                 Available = true;
                 log.LogInfo("Cleanup memo ready: instrumented " + InstrumentedSites + " instructions in " + InstrumentedMethods + " methods");
@@ -255,18 +258,16 @@ namespace UpgradeLagFix
         {
             // Only parameterless Clear() directly on a known scratch list; the receiver is the
             // instruction right before the call.
-            if (method != "Clear" || prev == null) return false;
+            if (method != nameof(List<object>.Clear) || prev == null) return false;
             var op = prev.OpCode.Code;
             if ((op == Cil.Code.Call || op == Cil.Code.Callvirt) && prev.Operand is MethodReference g)
                 return ScratchListGetters.Contains(g.Name) && g.Parameters.Count == 0;
             if (op == Cil.Code.Ldsfld && prev.Operand is FieldReference f)
-                return f.Name == "infoBuffer" && f.DeclaringType.Name == "PlayerData";
+                return f.Name == nameof(PlayerData.infoBuffer) && f.DeclaringType.Name == nameof(PlayerData);
             return false;
         }
 
         // ---------------- Instrumentation (runtime IL) ----------------
-
-        private static readonly Type GearDataType = AccessTools.Inner(typeof(PlayerData), "GearData");
 
         private static int ClassifyRuntime(CodeInstruction ins, CodeInstruction prev)
         {
@@ -278,7 +279,7 @@ namespace UpgradeLagFix
                 {
                     if (Mentions(dt, typeof(UpgradeInstance), typeof(UpgradeInfo)))
                         return IsScratchReceiverRuntime(mi.Name, prev) ? KindNone : KindCleanup;
-                    if (Mentions(dt, GearDataType, typeof(Upgrade))) return KindPrepare;
+                    if (Mentions(dt, typeof(PlayerData.GearData), typeof(Upgrade))) return KindPrepare;
                 }
                 if (OrderMethods.Contains(mi.Name) && Mentions(dt, typeof(UpgradeInfo))) return KindPrepare;
                 return KindNone;
@@ -294,12 +295,12 @@ namespace UpgradeLagFix
 
         private static bool IsScratchReceiverRuntime(string method, CodeInstruction prev)
         {
-            if (method != "Clear" || prev == null) return false;
+            if (method != nameof(List<object>.Clear) || prev == null) return false;
             if ((prev.opcode == OpCodes.Call || prev.opcode == OpCodes.Callvirt) && prev.operand is MethodInfo g
                 && ScratchListGetters.Contains(g.Name) && g.GetParameters().Length == 0)
                 return true;
             return prev.opcode == OpCodes.Ldsfld && prev.operand is FieldInfo f
-                && f.Name == "infoBuffer" && f.DeclaringType == typeof(PlayerData);
+                && f.Name == nameof(PlayerData.infoBuffer) && f.DeclaringType == typeof(PlayerData);
         }
 
         private static bool Mentions(Type t, params Type[] targets)
@@ -312,7 +313,21 @@ namespace UpgradeLagFix
             return false;
         }
 
-        private static IEnumerable<CodeInstruction> Instrument_Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original)
+        /// <summary>Every method found by the Cecil scan: a bump call goes right before each watched instruction.</summary>
+        [HarmonyPatch]
+        private static class InstrumentPatch
+        {
+            internal static List<MethodBase> Targets;
+
+            [HarmonyTargetMethods]
+            private static IEnumerable<MethodBase> TargetMethods() => Targets;
+
+            [HarmonyTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original) =>
+                Instrument(instructions, original);
+        }
+
+        private static IEnumerable<CodeInstruction> Instrument(IEnumerable<CodeInstruction> instructions, MethodBase original)
         {
             var list = instructions.ToList();
             var output = new List<CodeInstruction>(list.Count + 8);
@@ -350,7 +365,7 @@ namespace UpgradeLagFix
             return output;
         }
 
-        private static readonly MethodInfo InfoListSort = AccessTools.Method(typeof(List<UpgradeInfo>), "Sort", Type.EmptyTypes);
+        private static readonly MethodInfo InfoListSort = AccessTools.Method(typeof(List<UpgradeInfo>), nameof(List<UpgradeInfo>.Sort), Type.EmptyTypes);
         private static readonly MethodInfo SortInfosTrackedMethod = AccessTools.Method(typeof(CleanupMemo), nameof(SortInfosTracked));
         private static UpgradeInfo[] _sortBuffer = new UpgradeInfo[256];
 
@@ -502,96 +517,102 @@ namespace UpgradeLagFix
 
         // ---------------- Cleanup ----------------
 
-        private static bool Cleanup_Prefix(object __instance, out State __state)
+        [HarmonyPatch(typeof(PlayerData.GearData), nameof(PlayerData.GearData.Cleanup))]
+        private static class CleanupPatch
         {
-            __state = default;
-            if (!Plugin.CleanupMemoActive) return true;
-
-            var ups = _upsRef(__instance);
-            var skins = _skinsRef(__instance);
-            var pd = PlayerData.Instance;
-            if (pd == null) return true;
-
-            if (Memos.TryGetValue(__instance, out var m)
-                && m.Gen == _gen
-                && ReferenceEquals(m.Pd, pd)
-                && ReferenceEquals(m.Data, _dataRef(pd))
-                && ReferenceEquals(m.Ups, ups) && (ups == null || _versionRef(ups) == m.UpsVer)
-                && ReferenceEquals(m.Skins, skins) && (skins == null || _versionRef(skins) == m.SkinsVer))
+            [HarmonyPrefix]
+            private static bool Prefix(PlayerData.GearData __instance, out State __state)
             {
-                if (!Plugin.VerifyActive)
-                {
-                    Stats.CleanupSkipped++;
-                    return false;
-                }
-                __state.ExpectNoop = true;
-            }
+                __state = default;
+                if (!Plugin.CleanupMemoActive) return true;
 
-            __state.Track = true;
-            __state.Gen = _gen;
-            __state.Ups = ups;
-            __state.UpsVer = ups == null ? 0 : _versionRef(ups);
-            __state.Skins = skins;
-            __state.SkinsVer = skins == null ? 0 : _versionRef(skins);
-            return true;
-        }
-
-        private static Exception Cleanup_Finalizer(Exception __exception, object __instance, State __state)
-        {
-            if (!__state.Track) return __exception;
-            Stats.CleanupRun++;
-
-            var ups = _upsRef(__instance);
-            var skins = _skinsRef(__instance);
-            bool noop = __exception == null
-                && ReferenceEquals(ups, __state.Ups) && (ups == null || _versionRef(ups) == __state.UpsVer)
-                && ReferenceEquals(skins, __state.Skins) && (skins == null || _versionRef(skins) == __state.SkinsVer);
-
-            if (__state.ExpectNoop)
-            {
-                Stats.CleanupVerifyChecks++;
-                if (!noop)
-                {
-                    Stats.CleanupVerifyMismatches++;
-                    if (_mismatchLogs++ < 20)
-                        Plugin.Log.LogError("CLEANUP VERIFY MISMATCH: memo said no-op but Cleanup changed the equipped list");
-                }
-            }
-
-            Memos.Remove(__instance);
-            if (noop && __state.Gen == _gen)
-            {
+                var ups = __instance.equippedUpgrades;
+                var skins = __instance.equippedSkins;
                 var pd = PlayerData.Instance;
-                if (pd != null)
+                if (pd == null) return true;
+
+                if (Memos.TryGetValue(__instance, out var m)
+                    && m.Gen == _gen
+                    && ReferenceEquals(m.Pd, pd)
+                    && ReferenceEquals(m.Data, pd.data)
+                    && ReferenceEquals(m.Ups, ups) && (ups == null || _versionRef(ups) == m.UpsVer)
+                    && ReferenceEquals(m.Skins, skins) && (skins == null || _versionRef(skins) == m.SkinsVer))
                 {
-                    Memos.Add(__instance, new Memo
+                    if (!Plugin.VerifyActive)
                     {
-                        Gen = _gen,
-                        Pd = pd,
-                        Data = _dataRef(pd),
-                        Ups = ups,
-                        UpsVer = __state.UpsVer,
-                        Skins = skins,
-                        SkinsVer = __state.SkinsVer,
-                    });
+                        Stats.CleanupSkipped++;
+                        return false;
+                    }
+                    __state.ExpectNoop = true;
                 }
+
+                __state.Track = true;
+                __state.Gen = _gen;
+                __state.Ups = ups;
+                __state.UpsVer = ups == null ? 0 : _versionRef(ups);
+                __state.Skins = skins;
+                __state.SkinsVer = skins == null ? 0 : _versionRef(skins);
+                return true;
             }
-            return __exception;
+
+            [HarmonyFinalizer]
+            private static Exception Finalizer(Exception __exception, PlayerData.GearData __instance, ref State __state)
+            {
+                if (!__state.Track) return __exception;
+                Stats.CleanupRun++;
+
+                var ups = __instance.equippedUpgrades;
+                var skins = __instance.equippedSkins;
+                bool noop = __exception == null
+                    && ReferenceEquals(ups, __state.Ups) && (ups == null || _versionRef(ups) == __state.UpsVer)
+                    && ReferenceEquals(skins, __state.Skins) && (skins == null || _versionRef(skins) == __state.SkinsVer);
+
+                if (__state.ExpectNoop)
+                {
+                    Stats.CleanupVerifyChecks++;
+                    if (!noop)
+                    {
+                        Stats.CleanupVerifyMismatches++;
+                        if (_mismatchLogs++ < 20)
+                            Plugin.Log.LogError("CLEANUP VERIFY MISMATCH: memo said no-op but Cleanup changed the equipped list");
+                    }
+                }
+
+                Memos.Remove(__instance);
+                if (noop && __state.Gen == _gen)
+                {
+                    var pd = PlayerData.Instance;
+                    if (pd != null)
+                    {
+                        Memos.Add(__instance, new Memo
+                        {
+                            Gen = _gen,
+                            Pd = pd,
+                            Data = pd.data,
+                            Ups = ups,
+                            UpsVer = __state.UpsVer,
+                            Skins = skins,
+                            SkinsVer = __state.SkinsVer,
+                        });
+                    }
+                }
+                return __exception;
+            }
         }
 
         /// <summary>Changes whenever a Cleanup no-op may stop being one.</summary>
         internal static int Gen => _gen;
 
         /// <summary>True while a remembered no-op Cleanup is still valid for this GearData.</summary>
-        internal static bool IsClean(object gearData, PlayerData pd)
+        internal static bool IsClean(PlayerData.GearData gearData, PlayerData pd)
         {
             if (!Plugin.CleanupMemoActive || pd == null) return false;
-            var ups = _upsRef(gearData);
-            var skins = _skinsRef(gearData);
+            var ups = gearData.equippedUpgrades;
+            var skins = gearData.equippedSkins;
             return Memos.TryGetValue(gearData, out var m)
                 && m.Gen == _gen
                 && ReferenceEquals(m.Pd, pd)
-                && ReferenceEquals(m.Data, _dataRef(pd))
+                && ReferenceEquals(m.Data, pd.data)
                 && ReferenceEquals(m.Ups, ups) && (ups == null || _versionRef(ups) == m.UpsVer)
                 && ReferenceEquals(m.Skins, skins) && (skins == null || _versionRef(skins) == m.SkinsVer);
         }
@@ -600,7 +621,7 @@ namespace UpgradeLagFix
         /// Call right after IsClean: the equipped list was re-sorted in place without change. A real
         /// walk would run Cleanup once on the new version, find nothing and remember that version.
         /// </summary>
-        internal static void AdvanceUpsVersion(object gearData, int version)
+        internal static void AdvanceUpsVersion(PlayerData.GearData gearData, int version)
         {
             if (Memos.TryGetValue(gearData, out var m)) m.UpsVer = version;
         }

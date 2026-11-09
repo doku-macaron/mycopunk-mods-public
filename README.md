@@ -19,6 +19,7 @@ Not affiliated with Pigeons at Play or Devolver Digital.
 | [WeaponCycle](mods/weapon-cycle) | Puts a picked-up heavy weapon into the scroll wheel and weapon 1 key cycle, and lets the wheel skip weapons that are out of ammo. | [Thunderstore](https://thunderstore.io/c/mycopunk/p/doku_macaron/WeaponCycle/) |
 | [SystemMonitor](mods/system-monitor) | Shows FPS and your ping to the host in a corner of the screen. | [Thunderstore](https://thunderstore.io/c/mycopunk/p/doku_macaron/SystemMonitor/) |
 | [HealthRegenTimer](mods/health-regen-timer) | Shows the seconds until health regeneration starts, above the health bar. | [Thunderstore](https://thunderstore.io/c/mycopunk/p/doku_macaron/HealthRegenTimer/) |
+| [SpeedMonitor](mods/speed-monitor) | Shows your current movement speed under the health bar, measured from how far you actually move, so air and glide speed count too. | [Thunderstore](https://thunderstore.io/c/mycopunk/p/doku_macaron/SpeedMonitor/) |
 
 ## Building
 

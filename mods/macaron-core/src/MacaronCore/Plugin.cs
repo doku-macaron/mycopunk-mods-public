@@ -8,11 +8,16 @@ namespace MycopunkShared
     [MycoMod(null, ModFlags.IsClientSide)]
     public class MacaronCorePlugin : BaseUnityPlugin
     {
+        private Harmony _harmony;
+
         private void Awake()
         {
-            ModsMenu.Install(new Harmony(MacaronCore.Guid), this);
+            _harmony = new Harmony(MacaronCore.Guid);
+            ModsMenu.Install(_harmony, this);
             Hotkeys.ReportConflicts(this);
             Logger.LogInfo(MacaronCore.Name + " " + MacaronCore.Version + " loaded.");
         }
+
+        private void OnDestroy() => _harmony?.UnpatchSelf();
     }
 }

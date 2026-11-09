@@ -23,11 +23,6 @@ namespace MycopunkAbilityCooldown
     {
         private const string Prefix = "MycoCooldown";
 
-        private static readonly System.Reflection.FieldInfo AbilityField = AccessTools.Field(typeof(AbilityRechargeUI), "ability");
-        private static readonly System.Reflection.FieldInfo IconField = AccessTools.Field(typeof(AbilityRechargeUI), "icon");
-        private static readonly System.Reflection.FieldInfo KeybindField = AccessTools.Field(typeof(AbilityRechargeUI), "keybindText");
-        private static readonly System.Reflection.FieldInfo FillField = AccessTools.Field(typeof(AbilityRechargeUI), "chargedBackground");
-
         private AbilityRechargeUI _ui;
         private bool _built;
         private Graphic _shade;
@@ -60,17 +55,18 @@ namespace MycopunkAbilityCooldown
             }
         }
 
-        public static void Install(Harmony harmony)
+        [HarmonyPatch(typeof(AbilityRechargeUI), nameof(AbilityRechargeUI.Setup))]
+        internal static class SetupPatch
         {
-            var setup = AccessTools.Method(typeof(AbilityRechargeUI), "Setup");
-            if (setup == null || AbilityField == null || IconField == null || KeybindField == null)
-            {
-                Plugin.Log.LogWarning("AbilityRechargeUI.Setup or its fields not found; cooldown numbers are off.");
-                return;
-            }
-            harmony.Patch(setup, postfix: new HarmonyMethod(typeof(CooldownLabel), nameof(Setup_Postfix)));
+            [HarmonyPostfix]
+            private static void Postfix(AbilityRechargeUI __instance) => Attach(__instance);
+        }
+
+        /// <summary>Adds the label to the ability HUDs that were set up before the patch.</summary>
+        public static void AttachExisting()
+        {
             foreach (var ui in Object.FindObjectsByType<AbilityRechargeUI>(FindObjectsInactive.Include))
-                Setup_Postfix(ui);
+                Attach(ui);
         }
 
         private void OnDestroy()
@@ -80,14 +76,14 @@ namespace MycopunkAbilityCooldown
             if (_timer?.Root != null && _timer.Root.transform.parent != null) Destroy(_timer.Root.transform.parent.gameObject);
         }
 
-        private static void Setup_Postfix(AbilityRechargeUI __instance)
+        private static void Attach(AbilityRechargeUI ui)
         {
             try
             {
-                var label = __instance.GetComponent<CooldownLabel>();
+                var label = ui.GetComponent<CooldownLabel>();
                 if (label == null)
-                    label = __instance.gameObject.AddComponent<CooldownLabel>();
-                label._ui = __instance;
+                    label = ui.gameObject.AddComponent<CooldownLabel>();
+                label._ui = ui;
                 label._estimate.Reset(); // the pooled UI may now show another ability
             }
             catch (System.Exception e)
@@ -102,7 +98,7 @@ namespace MycopunkAbilityCooldown
                 return;
             try
             {
-                var ability = AbilityField.GetValue(_ui) as IActivatedAbility;
+                var ability = _ui.ability;
                 if (ability == null || !Plugin.Enabled.Value)
                 {
                     if (_built)
@@ -159,8 +155,8 @@ namespace MycopunkAbilityCooldown
 
         private bool Build()
         {
-            var icon = IconField.GetValue(_ui) as Image;
-            var font = KeybindField.GetValue(_ui) as TextMeshProUGUI;
+            var icon = _ui.icon;
+            var font = _ui.keybindText;
             if (icon == null || font == null || font.font == null)
             {
                 enabled = false;
@@ -168,7 +164,7 @@ namespace MycopunkAbilityCooldown
                 return false;
             }
             // The box background: the BevelRect that holds the charge bar. Without it, cover just the icon.
-            var fill = FillField?.GetValue(_ui) as Graphic;
+            var fill = _ui.chargedBackground;
             var bkg = fill != null && fill.transform.parent != null ? fill.transform.parent.GetComponent<BevelRect>() : null;
             var shape = bkg != null ? bkg.rectTransform : icon.rectTransform;
             var parent = icon.transform.parent;

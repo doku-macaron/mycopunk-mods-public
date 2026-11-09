@@ -1,4 +1,3 @@
-using System.Reflection;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -39,6 +38,7 @@ namespace MycopunkHealthNumbers
         internal ConfigEntry<float> TeammateOffsetYEntry;
         internal ConfigEntry<float> TeammateFontScaleEntry;
         internal ConfigEntry<bool> TeammateNameColorEntry;
+        internal ConfigEntry<bool> BossEntry;
 
         public bool Enabled => EnabledEntry.Value;
         public string Format => FormatEntry.Value;
@@ -51,22 +51,23 @@ namespace MycopunkHealthNumbers
         public float TeammateOffsetY => TeammateOffsetYEntry.Value;
         public float TeammateFontScale => TeammateFontScaleEntry.Value;
         public bool TeammateNameColor => TeammateNameColorEntry.Value;
+        public bool Boss => BossEntry.Value;
     }
 
     [BepInPlugin(Guid, Name, Version)]
-
-    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
-    // Client-side and not a sandbox mod: it only draws text and never changes results.
+    [BepInDependency(MycopunkShared.MacaronCore.Guid, MycopunkShared.MacaronCore.Version)]
+    // Client-side: it draws text and shares boss display data without changing gameplay.
     // Without this attribute the game treats any BepInEx plugin as a sandbox mod.
     [MycoMod(null, ModFlags.IsClientSide)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "t4t5u0.mycopunk.healthnumbers";
         public const string Name = "Mycopunk Health Numbers";
-        public const string Version = "0.4.3";
+        public const string Version = "0.4.4";
 
         internal static ManualLogSource Log;
         internal static Settings Settings;
+        internal static BossHealthNetwork BossNetwork;
 
         private ConfigEntry<AnchorMode> _anchor;
         private ConfigEntry<RendererMode> _renderer;
@@ -82,6 +83,7 @@ namespace MycopunkHealthNumbers
         private ConfigEntry<Key> _statDumpKey;
         private ConfigEntry<bool> _damageLog;
 
+        private Harmony _harmony;
         private HealthBarLocator _locator;
         private readonly HealthText _localText = new HealthText();
 
@@ -158,25 +160,28 @@ namespace MycopunkHealthNumbers
                 new ConfigDescription("Font size relative to the teammate's name.", new AcceptableValueRange<float>(0.3f, 3f)));
             s.TeammateNameColorEntry = Config.Bind("Teammates", "UseNameColor", true, new ConfigDescription("Use the color of the teammate's name. Off: use Style.Color.",
                 null, MenuText.Label("health.name_color")));
+            s.BossEntry = Config.Bind("Boss", "Enabled", true, new ConfigDescription(
+                "Show boss health over the health bar. Composite bosses use an approximate bar-based value; clients can request the maximum from a host with this mod.",
+                null, MenuText.Label("health.boss")));
             Settings = s;
+            BossNetwork = new BossHealthNetwork(Log);
 
-            _locator = new HealthBarLocator(AccessTools.Field(typeof(Player), "healthbar"));
-            if (!_locator.Available)
-                Log.LogWarning("Player.healthbar was not found; Anchor = HealthBar falls back to Screen.");
+            _locator = new HealthBarLocator();
 
             _statDumpKey = Config.Bind("Debug", "StatDumpKey", Key.None,
                 "Key that writes the Player prefab's base stats and your current stats to BepInEx/HealthNumbers/stats-*.md. None = off.");
             _damageLog = Config.Bind("Debug", "DamageLog", false, new ConfigDescription("Log every hit you take (raw damage, element, DoT, source, health lost, the one-hit guard) to the BepInEx log.",
                 null, MenuText.Label("health.damage_log")));
 
-            var harmony = new Harmony(Guid);
-            ModsMenu.Install(harmony, this);
-            CapTracker.Install(harmony);
+            _harmony = new Harmony(Guid);
+            ModsMenu.Install(_harmony, this);
+            CapTracker.Install(_harmony);
+            BossHealthLabel.Install(_harmony);
             DamageLog.Enabled = () => _damageLog.Value;
-            DamageLog.Install(harmony);
+            DamageLog.Install(_harmony);
             try
             {
-                TeammateHealthLabel.Install(harmony);
+                TeammateHealthLabel.Install(_harmony);
             }
             catch (System.Exception e)
             {
@@ -190,11 +195,15 @@ namespace MycopunkHealthNumbers
 
         private void OnDestroy()
         {
+            _harmony?.UnpatchSelf();
+            BossNetwork?.Dispose();
+            BossNetwork = null;
             if (_label != null) Destroy(_label.gameObject);
         }
 
         private void Update()
         {
+            BossNetwork?.Tick();
             Key key = _statDumpKey.Value;
             Keyboard kb = Keyboard.current;
             if (key == Key.None || kb == null)
@@ -259,7 +268,7 @@ namespace MycopunkHealthNumbers
             if (!UseGameRenderer)
             {
                 if (_label != null)
-                    GameText.SetActive(_label, false);
+                    GameHudText.SetActive(_label, false);
                 return;
             }
             try
@@ -267,11 +276,11 @@ namespace MycopunkHealthNumbers
                 if (!TryGetPlacement(out Player player, out float x, out float yMid) || !EnsureLabel(out Canvas root))
                 {
                     if (_label != null)
-                        GameText.SetActive(_label, false);
+                        GameHudText.SetActive(_label, false);
                     return;
                 }
 
-                GameText.SetText(_label, LocalText(player));
+                GameHudText.SetText(_label, LocalText(player));
                 float size = _fontSize.Value * (Screen.height / 1080f) / Mathf.Max(0.0001f, root.scaleFactor);
                 if (_label.fontSize != size)
                     _label.fontSize = size;
@@ -287,11 +296,11 @@ namespace MycopunkHealthNumbers
                     GameText.SetShadow(_label, _labelShadow, _labelShadowColor);
                 }
 
-                Camera cam = root.renderMode == RenderMode.ScreenSpaceOverlay ? null : (root.worldCamera != null ? root.worldCamera : Camera.main);
+                Camera cam = HudCoordinates.CameraFor(root);
                 var screenPoint = new Vector2(x, Screen.height - yMid);
                 if (RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)_labelParent, screenPoint, cam, out Vector2 local))
                     _label.rectTransform.localPosition = new Vector3(local.x, local.y, 0f);
-                GameText.SetActive(_label, true);
+                GameHudText.SetActive(_label, true);
             }
             catch (System.Exception e)
             {
@@ -393,7 +402,6 @@ namespace MycopunkHealthNumbers
             Found,
         }
 
-        private readonly FieldInfo _field;
         private readonly Vector3[] _corners = new Vector3[4];
 
         private Player _player;
@@ -401,18 +409,9 @@ namespace MycopunkHealthNumbers
         private Canvas _canvas;
         private bool _found;
 
-        public HealthBarLocator(FieldInfo field)
-        {
-            _field = field;
-        }
-
-        public bool Available => _field != null;
-
         public Result TryGetScreenRect(Player player, out Rect screenRect)
         {
             screenRect = default;
-            if (_field == null)
-                return Result.NotFound;
 
             // Look the bar up once per player; look again only if a bar we found has been destroyed.
             bool lostBar = _found && (_bar == null || _canvas == null);
@@ -422,7 +421,7 @@ namespace MycopunkHealthNumbers
                 _player = player;
                 _bar = null;
                 _canvas = null;
-                if (_field.GetValue(player) is Component c && c != null)
+                if (player.healthbar is Component c && c != null)
                 {
                     _bar = c.transform as RectTransform;
                     if (_bar != null)
@@ -444,7 +443,7 @@ namespace MycopunkHealthNumbers
             Camera cam = null;
             if (root.renderMode != RenderMode.ScreenSpaceOverlay)
             {
-                cam = root.worldCamera != null ? root.worldCamera : Camera.main;
+                cam = HudCoordinates.CameraFor(root);
                 if (cam == null)
                     return Result.NotFound;
             }

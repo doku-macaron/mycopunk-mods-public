@@ -30,6 +30,7 @@ internal sealed class DamageRpcHooks : IDisposable
         this.log = log;
         this.observeDamage = observeDamage;
         this.observeKill = observeKill;
+        // Reflection: __rpc_func_table is private to Unity.Netcode.Runtime, which is not publicized.
         FieldInfo field = typeof(NetworkBehaviour).GetField("__rpc_func_table", BindingFlags.Static | BindingFlags.NonPublic);
         if (field == null) throw new MissingFieldException("NetworkBehaviour.__rpc_func_table");
         table = field.GetValue(null) as Dictionary<Type, Dictionary<uint, NetworkBehaviour.RpcReceiveHandler>>;

@@ -47,12 +47,13 @@ namespace UpgradeLagFix
             public int CountBefore;
         }
 
-        private static readonly ConditionalWeakTable<object, Memo> Memos = new ConditionalWeakTable<object, Memo>();
+        private static readonly ConditionalWeakTable<PlayerData.GearData, Memo> Memos = new ConditionalWeakTable<PlayerData.GearData, Memo>();
 
-        private static AccessTools.FieldRef<object, List<PlayerData.UpgradeEquipData>> _upsRef;
+        // List<T>._version is a private field of mscorlib (not publicized), so it is read through a field ref.
+        // Set in Setup, so a missing field only disables this feature.
         private static AccessTools.FieldRef<List<PlayerData.UpgradeEquipData>, int> _versionRef;
-        private static AccessTools.FieldRef<PlayerData, Dictionary<int, List<UpgradeInfo>>> _dataRef;
-        private static MethodInfo _listSort;
+        private static readonly MethodInfo ListSort =
+            AccessTools.Method(typeof(List<PlayerData.UpgradeEquipData>), nameof(List<PlayerData.UpgradeEquipData>.Sort), Type.EmptyTypes);
         private static int _mismatchLogs;
         private static int _sortMismatchLogs;
         private static int _sortSitesReplaced;
@@ -65,23 +66,15 @@ namespace UpgradeLagFix
             var log = Plugin.Log;
             try
             {
-                var gearData = AccessTools.Inner(typeof(PlayerData), "GearData");
-                _upsRef = AccessTools.FieldRefAccess<List<PlayerData.UpgradeEquipData>>(gearData, "equippedUpgrades");
                 _versionRef = AccessTools.FieldRefAccess<List<PlayerData.UpgradeEquipData>, int>("_version");
-                _dataRef = AccessTools.FieldRefAccess<PlayerData, Dictionary<int, List<UpgradeInfo>>>("data");
-                _listSort = AccessTools.Method(typeof(List<PlayerData.UpgradeEquipData>), "Sort", Type.EmptyTypes);
-
-                var prepare = AccessTools.Method(gearData, "PrepareUpgrades");
-                harmony.Patch(prepare, transpiler: new HarmonyMethod(typeof(PrepareMemo), nameof(Sort_Transpiler)));
+                harmony.CreateClassProcessor(typeof(SortPatch)).Patch();
                 SortAvailable = _sortSitesReplaced == 1;
                 if (!SortAvailable)
                     log.LogWarning("Sort skip disabled: expected 1 List.Sort() call in PrepareUpgrades, found " + _sortSitesReplaced);
 
                 if (CleanupMemo.Available && CleanupMemo.PrepAvailable)
                 {
-                    harmony.Patch(prepare,
-                        prefix: new HarmonyMethod(typeof(PrepareMemo), nameof(Prepare_Prefix)),
-                        finalizer: new HarmonyMethod(typeof(PrepareMemo), nameof(Prepare_Finalizer)));
+                    harmony.CreateClassProcessor(typeof(PreparePatch)).Patch();
                     PrepareAvailable = true;
                 }
                 else
@@ -100,41 +93,46 @@ namespace UpgradeLagFix
         }
 
         /// <summary>True while a remembered no-op destroyed-check is still valid for this GearData.</summary>
-        internal static bool IsClean(object gearData, List<PlayerData.UpgradeEquipData> ups, PlayerData pd)
+        internal static bool IsClean(PlayerData.GearData gearData, List<PlayerData.UpgradeEquipData> ups, PlayerData pd)
         {
             if (!Plugin.PrepareMemoActive || ups == null || pd == null) return false;
             return Memos.TryGetValue(gearData, out var m)
                 && m.Gen == CleanupMemo.PrepGen
                 && ReferenceEquals(m.Pd, pd)
-                && ReferenceEquals(m.Data, _dataRef(pd))
+                && ReferenceEquals(m.Data, pd.data)
                 && ReferenceEquals(m.List, ups)
                 && _versionRef(ups) == m.VersionAfter;
         }
 
         /// <summary>Call right after IsClean: the list was re-sorted in place without change.</summary>
-        internal static void AdvanceVersion(object gearData, int version)
+        internal static void AdvanceVersion(PlayerData.GearData gearData, int version)
         {
             if (Memos.TryGetValue(gearData, out var m)) m.VersionAfter = version;
         }
 
         // ---------------- Sort ----------------
 
-        private static IEnumerable<CodeInstruction> Sort_Transpiler(IEnumerable<CodeInstruction> instructions)
+        [HarmonyPatch(typeof(PlayerData.GearData), nameof(PlayerData.GearData.PrepareUpgrades))]
+        private static class SortPatch
         {
-            var helper = AccessTools.Method(typeof(PrepareMemo), nameof(SortOrSkip));
-            int replaced = 0;
-            foreach (var ins in instructions)
+            [HarmonyTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
             {
-                if ((ins.opcode == OpCodes.Callvirt || ins.opcode == OpCodes.Call) && ins.operand is MethodInfo mi && mi == _listSort)
+                var helper = AccessTools.Method(typeof(PrepareMemo), nameof(SortOrSkip));
+                int replaced = 0;
+                foreach (var ins in instructions)
                 {
-                    // Same stack shape: (List<UpgradeEquipData>) -> void.
-                    ins.opcode = OpCodes.Call;
-                    ins.operand = helper;
-                    replaced++;
+                    if ((ins.opcode == OpCodes.Callvirt || ins.opcode == OpCodes.Call) && ins.operand is MethodInfo mi && mi == ListSort)
+                    {
+                        // Same stack shape: (List<UpgradeEquipData>) -> void.
+                        ins.opcode = OpCodes.Call;
+                        ins.operand = helper;
+                        replaced++;
+                    }
+                    yield return ins;
                 }
-                yield return ins;
+                _sortSitesReplaced = replaced;
             }
-            _sortSitesReplaced = replaced;
         }
 
         public static void SortOrSkip(List<PlayerData.UpgradeEquipData> list)
@@ -201,79 +199,85 @@ namespace UpgradeLagFix
 
         // ---------------- Destroyed-check ----------------
 
-        private static bool Prepare_Prefix(object __instance, bool sort, out State __state)
+        [HarmonyPatch(typeof(PlayerData.GearData), nameof(PlayerData.GearData.PrepareUpgrades))]
+        private static class PreparePatch
         {
-            __state = default;
-            if (!Plugin.PrepareMemoActive) return true;
-
-            var ups = _upsRef(__instance);
-            if (ups == null) return true;
-            var pd = PlayerData.Instance;
-            if (pd == null) return true;
-
-            if (Memos.TryGetValue(__instance, out var m)
-                && m.Gen == CleanupMemo.PrepGen
-                && ReferenceEquals(m.Pd, pd)
-                && ReferenceEquals(m.Data, _dataRef(pd))
-                && ReferenceEquals(m.List, ups)
-                && _versionRef(ups) == m.VersionAfter)
+            [HarmonyPrefix]
+            private static bool Prefix(PlayerData.GearData __instance, bool sort, out State __state)
             {
-                if (!Plugin.VerifyActive)
-                {
-                    // The destroyed-check would remove nothing; only the sort part remains.
-                    if (sort) SortOrSkip(ups);
-                    m.VersionAfter = _versionRef(ups);
-                    Stats.PrepareSkipped++;
-                    return false;
-                }
-                __state.ExpectNoop = true;
-            }
+                __state = default;
+                if (!Plugin.PrepareMemoActive) return true;
 
-            __state.Track = true;
-            __state.Gen = CleanupMemo.PrepGen;
-            __state.List = ups;
-            __state.CountBefore = ups.Count;
-            return true;
-        }
-
-        private static Exception Prepare_Finalizer(Exception __exception, object __instance, State __state)
-        {
-            if (!__state.Track) return __exception;
-            Stats.PrepareRun++;
-
-            var ups = _upsRef(__instance);
-            // The check only ever removes entries and Sort keeps the count, so an unchanged count
-            // on the same list means nothing was removed.
-            bool noop = __exception == null && ReferenceEquals(ups, __state.List) && ups.Count == __state.CountBefore;
-
-            if (__state.ExpectNoop)
-            {
-                Stats.PrepareVerifyChecks++;
-                if (!noop)
-                {
-                    Stats.PrepareVerifyMismatches++;
-                    if (_mismatchLogs++ < 20)
-                        Plugin.Log.LogError("PREPARE VERIFY MISMATCH: memo said no-op but PrepareUpgrades removed entries");
-                }
-            }
-
-            Memos.Remove(__instance);
-            if (noop && __state.Gen == CleanupMemo.PrepGen)
-            {
+                var ups = __instance.equippedUpgrades;
+                if (ups == null) return true;
                 var pd = PlayerData.Instance;
-                if (pd != null)
+                if (pd == null) return true;
+
+                if (Memos.TryGetValue(__instance, out var m)
+                    && m.Gen == CleanupMemo.PrepGen
+                    && ReferenceEquals(m.Pd, pd)
+                    && ReferenceEquals(m.Data, pd.data)
+                    && ReferenceEquals(m.List, ups)
+                    && _versionRef(ups) == m.VersionAfter)
                 {
-                    Memos.Add(__instance, new Memo
+                    if (!Plugin.VerifyActive)
                     {
-                        Gen = __state.Gen,
-                        Pd = pd,
-                        Data = _dataRef(pd),
-                        List = ups,
-                        VersionAfter = _versionRef(ups),
-                    });
+                        // The destroyed-check would remove nothing; only the sort part remains.
+                        if (sort) SortOrSkip(ups);
+                        m.VersionAfter = _versionRef(ups);
+                        Stats.PrepareSkipped++;
+                        return false;
+                    }
+                    __state.ExpectNoop = true;
                 }
+
+                __state.Track = true;
+                __state.Gen = CleanupMemo.PrepGen;
+                __state.List = ups;
+                __state.CountBefore = ups.Count;
+                return true;
             }
-            return __exception;
+
+            [HarmonyFinalizer]
+            private static Exception Finalizer(Exception __exception, PlayerData.GearData __instance, ref State __state)
+            {
+                if (!__state.Track) return __exception;
+                Stats.PrepareRun++;
+
+                var ups = __instance.equippedUpgrades;
+                // The check only ever removes entries and Sort keeps the count, so an unchanged count
+                // on the same list means nothing was removed.
+                bool noop = __exception == null && ReferenceEquals(ups, __state.List) && ups.Count == __state.CountBefore;
+
+                if (__state.ExpectNoop)
+                {
+                    Stats.PrepareVerifyChecks++;
+                    if (!noop)
+                    {
+                        Stats.PrepareVerifyMismatches++;
+                        if (_mismatchLogs++ < 20)
+                            Plugin.Log.LogError("PREPARE VERIFY MISMATCH: memo said no-op but PrepareUpgrades removed entries");
+                    }
+                }
+
+                Memos.Remove(__instance);
+                if (noop && __state.Gen == CleanupMemo.PrepGen)
+                {
+                    var pd = PlayerData.Instance;
+                    if (pd != null)
+                    {
+                        Memos.Add(__instance, new Memo
+                        {
+                            Gen = __state.Gen,
+                            Pd = pd,
+                            Data = pd.data,
+                            List = ups,
+                            VersionAfter = _versionRef(ups),
+                        });
+                    }
+                }
+                return __exception;
+            }
         }
     }
 }

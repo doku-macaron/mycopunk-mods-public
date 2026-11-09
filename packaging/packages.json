@@ -130,6 +130,16 @@
         "client",
         "qol"
       ]
+    },
+    {
+      "folder": "speed-monitor",
+      "name": "SpeedMonitor",
+      "description": "Shows your current movement speed under the health bar, measured from how far you actually move, so air and glide speed count too.",
+      "categories": [
+        "mods",
+        "client",
+        "qol"
+      ]
     }
   ]
 }

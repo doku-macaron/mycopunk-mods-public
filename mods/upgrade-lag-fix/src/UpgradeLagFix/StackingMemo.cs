@@ -83,7 +83,7 @@ namespace UpgradeLagFix
         public struct State
         {
             public bool Track;
-            public object Gd;
+            public PlayerData.GearData Gd;
             public List<PlayerData.UpgradeEquipData> Ups;
             public int VerBefore;
             public int CountBefore;
@@ -95,11 +95,11 @@ namespace UpgradeLagFix
             public bool PredFound;
         }
 
-        private static readonly ConditionalWeakTable<object, Table> Tables = new ConditionalWeakTable<object, Table>();
+        private static readonly ConditionalWeakTable<PlayerData.GearData, Table> Tables = new ConditionalWeakTable<PlayerData.GearData, Table>();
 
-        private static AccessTools.FieldRef<object, List<PlayerData.UpgradeEquipData>> _upsRef;
+        // List<T>._version is a private field of mscorlib (not publicized), so it is read through a field ref.
+        // Set in Setup, so a missing field only disables this feature.
         private static AccessTools.FieldRef<List<PlayerData.UpgradeEquipData>, int> _versionRef;
-        private static AccessTools.FieldRef<PlayerData, Dictionary<int, List<UpgradeInfo>>> _dataRef;
         private static int _mismatchLogs;
 
         public static bool Available { get; private set; }
@@ -114,27 +114,9 @@ namespace UpgradeLagFix
                     log.LogWarning("Stacking table disabled: needs both the cleanup and the prepare memo");
                     return;
                 }
-                var gearData = AccessTools.Inner(typeof(PlayerData), "GearData");
-                _upsRef = AccessTools.FieldRefAccess<List<PlayerData.UpgradeEquipData>>(gearData, "equippedUpgrades");
                 _versionRef = AccessTools.FieldRefAccess<List<PlayerData.UpgradeEquipData>, int>("_version");
-                _dataRef = AccessTools.FieldRefAccess<PlayerData, Dictionary<int, List<UpgradeInfo>>>("data");
-
-                var stacking = AccessTools.Method(typeof(UpgradeProperty), nameof(UpgradeProperty.GetStackingModifier),
-                    new[] { typeof(IUpgradable), typeof(UpgradeInstance), typeof(float), typeof(bool), typeof(int).MakeByRefType() });
-                var applied = AccessTools.Method(typeof(UpgradeProperty), nameof(UpgradeProperty.GetAppliedCount),
-                    new[] { typeof(IUpgradable), typeof(UpgradeInstance), typeof(bool) });
-                if (stacking == null || applied == null)
-                {
-                    log.LogWarning("Stacking table disabled: GetStackingModifier/GetAppliedCount signature not found");
-                    return;
-                }
-
-                harmony.Patch(stacking,
-                    prefix: new HarmonyMethod(typeof(StackingMemo), nameof(Stacking_Prefix)),
-                    finalizer: new HarmonyMethod(typeof(StackingMemo), nameof(Stacking_Finalizer)));
-                harmony.Patch(applied,
-                    prefix: new HarmonyMethod(typeof(StackingMemo), nameof(Applied_Prefix)),
-                    finalizer: new HarmonyMethod(typeof(StackingMemo), nameof(Applied_Finalizer)));
+                harmony.CreateClassProcessor(typeof(StackingPatch)).Patch();
+                harmony.CreateClassProcessor(typeof(AppliedPatch)).Patch();
                 Available = true;
                 log.LogInfo("Stacking table ready");
             }
@@ -147,72 +129,87 @@ namespace UpgradeLagFix
 
         // ---------------- Patches ----------------
 
-        private static bool Stacking_Prefix(IUpgradable gear, UpgradeInstance instance, float coefficient, bool mustBeEquipped,
-            ref int prevCount, ref float __result, out State __state)
+        [HarmonyPatch(typeof(UpgradeProperty), nameof(UpgradeProperty.GetStackingModifier),
+            new[] { typeof(IUpgradable), typeof(UpgradeInstance), typeof(float), typeof(bool), typeof(int) },
+            new[] { ArgumentType.Normal, ArgumentType.Normal, ArgumentType.Normal, ArgumentType.Normal, ArgumentType.Ref })]
+        private static class StackingPatch
         {
-            if (!Begin(gear, instance, out __state, out var count, out var found)) return true;
-            if (Plugin.VerifyActive)
+            [HarmonyPrefix]
+            private static bool Prefix(IUpgradable gear, UpgradeInstance instance, float coefficient, bool mustBeEquipped,
+                ref int prevCount, ref float __result, out State __state)
             {
-                __state.HasPrediction = true;
-                __state.PredCount = count;
-                __state.PredFound = found;
-                return true;
+                if (!Begin(gear, instance, out __state, out var count, out var found)) return true;
+                if (Plugin.VerifyActive)
+                {
+                    __state.HasPrediction = true;
+                    __state.PredCount = count;
+                    __state.PredFound = found;
+                    return true;
+                }
+                Commit(ref __state);
+                if (mustBeEquipped && !found)
+                {
+                    prevCount = 0;
+                    __result = 1f;
+                }
+                else
+                {
+                    prevCount = count;
+                    __result = (float)count * coefficient + 1f;
+                }
+                return false;
             }
-            Commit(ref __state);
-            if (mustBeEquipped && !found)
+
+            [HarmonyFinalizer]
+            private static Exception Finalizer(Exception __exception, UpgradeInstance instance, float coefficient, bool mustBeEquipped,
+                int prevCount, ref float __result, ref State __state)
             {
-                prevCount = 0;
-                __result = 1f;
+                if (!__state.Track) return __exception;
+                if (__state.HasPrediction && __exception == null)
+                {
+                    int expCount = mustBeEquipped && !__state.PredFound ? 0 : __state.PredCount;
+                    float expResult = mustBeEquipped && !__state.PredFound ? 1f : (float)__state.PredCount * coefficient + 1f;
+                    Check(expCount == prevCount && BitConverter.SingleToInt32Bits(expResult) == BitConverter.SingleToInt32Bits(__result),
+                        "GetStackingModifier", instance, "table count " + expCount + " / " + expResult.ToString("R") +
+                        ", original " + prevCount + " / " + __result.ToString("R"));
+                }
+                AfterOriginal(ref __state, __exception);
+                return __exception;
             }
-            else
-            {
-                prevCount = count;
-                __result = (float)count * coefficient + 1f;
-            }
-            return false;
         }
 
-        private static Exception Stacking_Finalizer(Exception __exception, UpgradeInstance instance, float coefficient, bool mustBeEquipped,
-            int prevCount, float __result, State __state)
+        [HarmonyPatch(typeof(UpgradeProperty), nameof(UpgradeProperty.GetAppliedCount),
+            new[] { typeof(IUpgradable), typeof(UpgradeInstance), typeof(bool) })]
+        private static class AppliedPatch
         {
-            if (!__state.Track) return __exception;
-            if (__state.HasPrediction && __exception == null)
+            [HarmonyPrefix]
+            private static bool Prefix(IUpgradable gear, UpgradeInstance instance, bool mustBeEquipped, ref int __result, out State __state)
             {
-                int expCount = mustBeEquipped && !__state.PredFound ? 0 : __state.PredCount;
-                float expResult = mustBeEquipped && !__state.PredFound ? 1f : (float)__state.PredCount * coefficient + 1f;
-                Check(expCount == prevCount && BitConverter.SingleToInt32Bits(expResult) == BitConverter.SingleToInt32Bits(__result),
-                    "GetStackingModifier", instance, "table count " + expCount + " / " + expResult.ToString("R") +
-                    ", original " + prevCount + " / " + __result.ToString("R"));
+                if (!Begin(gear, instance, out __state, out var count, out var found)) return true;
+                if (Plugin.VerifyActive)
+                {
+                    __state.HasPrediction = true;
+                    __state.PredCount = count;
+                    __state.PredFound = found;
+                    return true;
+                }
+                Commit(ref __state);
+                __result = mustBeEquipped && !found ? 0 : count;
+                return false;
             }
-            AfterOriginal(ref __state, __exception);
-            return __exception;
-        }
 
-        private static bool Applied_Prefix(IUpgradable gear, UpgradeInstance instance, bool mustBeEquipped, ref int __result, out State __state)
-        {
-            if (!Begin(gear, instance, out __state, out var count, out var found)) return true;
-            if (Plugin.VerifyActive)
+            [HarmonyFinalizer]
+            private static Exception Finalizer(Exception __exception, UpgradeInstance instance, bool mustBeEquipped, int __result, ref State __state)
             {
-                __state.HasPrediction = true;
-                __state.PredCount = count;
-                __state.PredFound = found;
-                return true;
+                if (!__state.Track) return __exception;
+                if (__state.HasPrediction && __exception == null)
+                {
+                    int exp = mustBeEquipped && !__state.PredFound ? 0 : __state.PredCount;
+                    Check(exp == __result, "GetAppliedCount", instance, "table " + exp + ", original " + __result);
+                }
+                AfterOriginal(ref __state, __exception);
+                return __exception;
             }
-            Commit(ref __state);
-            __result = mustBeEquipped && !found ? 0 : count;
-            return false;
-        }
-
-        private static Exception Applied_Finalizer(Exception __exception, UpgradeInstance instance, bool mustBeEquipped, int __result, State __state)
-        {
-            if (!__state.Track) return __exception;
-            if (__state.HasPrediction && __exception == null)
-            {
-                int exp = mustBeEquipped && !__state.PredFound ? 0 : __state.PredCount;
-                Check(exp == __result, "GetAppliedCount", instance, "table " + exp + ", original " + __result);
-            }
-            AfterOriginal(ref __state, __exception);
-            return __exception;
         }
 
         // ---------------- Core ----------------
@@ -253,9 +250,9 @@ namespace UpgradeLagFix
             if (!Plugin.StackTableActive || gear == null || instance == null) return false;
             try
             {
-                object gd = PlayerData.GetGearData(ResolveWalkTarget(gear));
+                var gd = PlayerData.GetGearData(ResolveWalkTarget(gear));
                 if (gd == null) return false;
-                var ups = _upsRef(gd);
+                var ups = gd.equippedUpgrades;
                 var pd = PlayerData.Instance;
                 if (ups == null || pd == null) return false;
                 int ver = _versionRef(ups);
@@ -269,7 +266,7 @@ namespace UpgradeLagFix
                 st.PrepGen = CleanupMemo.PrepGen;
 
                 if (!IsClean(gd, ups, pd)) return false;
-                var data = _dataRef(pd);
+                var data = pd.data;
                 var t = Tables.GetValue(gd, _ => new Table());
                 if (!t.Matches(ups, ver, pd, data)) return false;
                 if (!t.Built && !Build(t, ups)) return false;
@@ -298,7 +295,7 @@ namespace UpgradeLagFix
             }
         }
 
-        private static bool IsClean(object gd, List<PlayerData.UpgradeEquipData> ups, PlayerData pd) =>
+        private static bool IsClean(PlayerData.GearData gd, List<PlayerData.UpgradeEquipData> ups, PlayerData pd) =>
             PrepareMemo.IsClean(gd, ups, pd) && CleanupMemo.IsClean(gd, pd);
 
         private static bool Build(Table t, List<PlayerData.UpgradeEquipData> ups)
@@ -350,7 +347,7 @@ namespace UpgradeLagFix
             {
                 var gd = st.Gd;
                 var t = Tables.GetValue(gd, _ => new Table());
-                var ups = _upsRef(gd);
+                var ups = gd.equippedUpgrades;
                 var pd = PlayerData.Instance;
                 if (exception != null || ups == null || pd == null || !IsClean(gd, ups, pd))
                 {
@@ -361,9 +358,9 @@ namespace UpgradeLagFix
                 bool onlySorted = st.TableUsable && t.Built
                     && ReferenceEquals(ups, st.Ups) && ver == st.VerBefore + 1 && ups.Count == st.CountBefore
                     && st.Gen == CleanupMemo.Gen && st.PrepGen == CleanupMemo.PrepGen
-                    && ReferenceEquals(t.Pd, pd) && ReferenceEquals(t.Data, _dataRef(pd));
+                    && ReferenceEquals(t.Pd, pd) && ReferenceEquals(t.Data, pd.data);
                 if (onlySorted) t.Version = ver;
-                else t.SetKey(ups, ver, CleanupMemo.Gen, CleanupMemo.PrepGen, pd, _dataRef(pd));
+                else t.SetKey(ups, ver, CleanupMemo.Gen, CleanupMemo.PrepGen, pd, pd.data);
             }
             catch
             {

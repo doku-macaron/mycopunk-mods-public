@@ -12,9 +12,6 @@ public sealed class TeammateDpsLabel : MonoBehaviour
     internal const string LineId = "f1w3.dpschecker";
     internal const int LineOrder = 100;
 
-    private static readonly System.Reflection.FieldInfo NameField = typeof(TeammateHUD).GetField("nameText",
-        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
-
     private static readonly TeammateDpsText.StatsSource FromPlugin = delegate(ulong id, out CombatStats stats, out bool dpsEstimated, out bool totalsEstimated)
     {
         stats = default(CombatStats);
@@ -34,7 +31,7 @@ public sealed class TeammateDpsLabel : MonoBehaviour
     {
         owner = hud;
         player = teammate;
-        nameText = NameField != null ? NameField.GetValue(hud) as TextMeshProUGUI : null;
+        nameText = hud.nameText;
         label = UnityTeammateHud.AddText(hud, LineId, LineOrder);
         if (label == null || nameText == null) return false;
         nextUpdate = 0;
@@ -53,7 +50,7 @@ public sealed class TeammateDpsLabel : MonoBehaviour
     {
         if (label == null || nameText == null || player == null) return;
         string value = text.Get(player.OwnerClientId);
-        if (label.text != value) label.text = value;
+        MycopunkShared.GameHudText.SetText(label, value);
         label.color = nameText.color;
         label.fontSize = nameText.fontSize;
         UnityTeammateHud.Place(owner);

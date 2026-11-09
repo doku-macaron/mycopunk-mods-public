@@ -1,4 +1,3 @@
-using System.Reflection;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -10,12 +9,12 @@ using UnityEngine;
 
 namespace MycopunkSystemMonitor
 {
-    [BepInPlugin("f1w3.mycopunk.systemmonitor", "Mycopunk System Monitor", "0.1.1")]
-    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
+    [BepInPlugin("f1w3.mycopunk.systemmonitor", "Mycopunk System Monitor", "0.1.2")]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid, MycopunkShared.MacaronCore.Version)]
     [MycoMod(null, ModFlags.IsClientSide)]
     public class Plugin : BaseUnityPlugin
     {
-        private static readonly FieldInfo ConnectionField = AccessTools.Field(typeof(FacepunchTransport), "connectionManager");
+        private Harmony _harmony;
         private float _elapsed;
         private int _frames;
         private string _text = "FPS --";
@@ -30,7 +29,8 @@ namespace MycopunkSystemMonitor
                 "Show the monitor at the top of the screen instead of the bottom.", null, MenuText.Label("monitor.top")));
             _right = Config.Bind("Position", "Right", false, new ConfigDescription(
                 "Show the monitor at the right of the screen instead of the left.", null, MenuText.Label("monitor.right")));
-            ModsMenu.Install(new Harmony("f1w3.mycopunk.systemmonitor"), this);
+            _harmony = new Harmony("f1w3.mycopunk.systemmonitor");
+            ModsMenu.Install(_harmony, this);
         }
 
         private void Update()
@@ -42,9 +42,9 @@ namespace MycopunkSystemMonitor
             var manager = NetworkManager.Singleton;
             bool client = manager != null && manager.IsConnectedClient && !manager.IsServer;
             int ping = 0;
-            if (client && manager.NetworkConfig.NetworkTransport is FacepunchTransport transport && ConnectionField != null)
+            if (client && manager.NetworkConfig.NetworkTransport is FacepunchTransport transport)
             {
-                var connection = ConnectionField.GetValue(transport) as ConnectionManager;
+                ConnectionManager connection = transport.connectionManager;
                 if (connection != null && connection.Connected)
                     ping = connection.Connection.QuickStatus().Ping;
             }
@@ -52,6 +52,8 @@ namespace MycopunkSystemMonitor
             _elapsed = 0f;
             _frames = 0;
         }
+
+        private void OnDestroy() => _harmony?.UnpatchSelf();
 
         private void OnGUI()
         {

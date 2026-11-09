@@ -13,14 +13,14 @@ namespace MycopunkThrowPreview
         {
             ["en"] = new Dictionary<string, string>
             {
-                ["throw.grenade"] = "Grenade: hold to aim, release to throw",
+                ["throw.grenade"] = "Hold to aim grenades, release to throw",
                 ["throw.arc"] = "Arc for thrown objects",
-                ["throw.color"] = "Arc colour",
-                ["throw.revive_color"] = "Arc colour when it revives",
+                ["throw.color"] = "Arc color",
+                ["throw.revive_color"] = "Arc color when it revives",
             },
             ["ja"] = new Dictionary<string, string>
             {
-                ["throw.grenade"] = "グレネード：長押しで狙い、離して投げる",
+                ["throw.grenade"] = "グレネードを長押しで狙い、離して投げる",
                 ["throw.arc"] = "投げる物の軌道を表示",
                 ["throw.color"] = "軌道の色",
                 ["throw.revive_color"] = "蘇生できるときの軌道の色",
@@ -31,8 +31,8 @@ namespace MycopunkThrowPreview
         {
             ["ja"] = new Dictionary<string, string>
             {
-                ["throw.grenade"] = "グレネードキーを押している間は投げる場所を表示し、離すと投げます。短く押した場合はすぐに投げます。変更はすぐに反映されます。",
-                ["throw.arc"] = "持っている物を投げるためにチャージしている間、軌道を表示します。変更はすぐに反映されます。",
+                ["throw.grenade"] = "グレネードキーを押している間は投げる場所を表示し、離すと投げます。短く押した場合はすぐに投げます。この変更は即時に反映されます。",
+                ["throw.arc"] = "持っている物を投げるためにチャージしている間、軌道を表示します。この変更は即時に反映されます。",
                 ["throw.color"] = "軌道の線の色です。不透明度は設定ファイルの値のままです。",
                 ["throw.revive_color"] = "味方のパーツを投げて、同じ味方の別のパーツに繋がる（蘇生が進む）ときの軌道の色です。不透明度は設定ファイルの値のままです。",
             },

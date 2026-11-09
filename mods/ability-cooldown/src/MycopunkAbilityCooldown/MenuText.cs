@@ -25,7 +25,7 @@ namespace MycopunkAbilityCooldown
         {
             ["ja"] = new Dictionary<string, string>
             {
-                ["ability.cooldown"] = "各アビリティのアイコンに次の使用までの秒数を表示します。変更はすぐに反映されます。",
+                ["ability.cooldown"] = "各アビリティのアイコンに次の使用までの秒数を表示します。この変更は即時に反映されます。",
             },
         };
 

@@ -4,6 +4,7 @@ using UnityEngine;
 
 namespace MycopunkQuickTimers
 {
+    [HarmonyPatch]
     internal static class StartupTiming
     {
         private static float _firstCheck = -1f;
@@ -13,28 +14,29 @@ namespace MycopunkQuickTimers
         {
             try
             {
-                var music = AccessTools.Method(typeof(StartMenu), "OnMusicLoaded", Type.EmptyTypes);
-                var banks = AccessTools.PropertyGetter(typeof(Global), "AreAllBanksLoaded");
-                var bankCallback = AccessTools.Method(typeof(Global), "BankCallback");
-                if (music != null) harmony.Patch(music, postfix: new HarmonyMethod(typeof(StartupTiming), nameof(MusicLoaded)));
-                if (banks != null) harmony.Patch(banks, postfix: new HarmonyMethod(typeof(StartupTiming), nameof(BanksChecked)));
-                if (bankCallback != null) harmony.Patch(bankCallback, postfix: new HarmonyMethod(typeof(StartupTiming), nameof(BankLoaded)));
+                harmony.CreateClassProcessor(typeof(StartupTiming)).Patch();
             }
             catch (Exception e) { Plugin.Log.LogWarning("Startup timing unavailable: " + e.Message); }
         }
 
+        [HarmonyPatch(typeof(Global), nameof(Global.BankCallback))]
+        [HarmonyPostfix]
         private static void BankLoaded()
         {
             if (!_reported && _firstCheck >= 0f && StartMenu.Instance != null)
                 BanksChecked(Global.AreAllBanksLoaded);
         }
 
+        [HarmonyPatch(typeof(StartMenu), nameof(StartMenu.OnMusicLoaded))]
+        [HarmonyPostfix]
         private static void MusicLoaded()
         {
             if (!_reported && StartMenu.Instance != null)
                 Plugin.Log.LogInfo($"Startup timing: menu music ready at {Time.realtimeSinceStartup:F2} s since Unity startup.");
         }
 
+        [HarmonyPatch(typeof(Global), nameof(Global.AreAllBanksLoaded), MethodType.Getter)]
+        [HarmonyPostfix]
         private static void BanksChecked(bool __result)
         {
             if (_reported || StartMenu.Instance == null) return;

@@ -9,11 +9,11 @@ using UnityEngine.UI;
 
 [assembly: System.Reflection.AssemblyVersion("0.2.0.0")]
 [assembly: System.Reflection.AssemblyFileVersion("0.2.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.2.1")]
+[assembly: System.Reflection.AssemblyInformationalVersion("0.2.2")]
 
-[BepInPlugin("f1w3.mycopunk.dpschecker", "DPS Checker", "0.2.1")]
+[BepInPlugin("f1w3.mycopunk.dpschecker", "DPS Checker", "0.2.2")]
 
-[BepInDependency(MycopunkShared.MacaronCore.Guid)]
+[BepInDependency(MycopunkShared.MacaronCore.Guid, MycopunkShared.MacaronCore.Version)]
 [BepInProcess("Mycopunk.exe")]
 [MycoMod(null, ModFlags.IsClientSide)]
 public sealed class Plugin : BaseUnityPlugin
@@ -21,12 +21,13 @@ public sealed class Plugin : BaseUnityPlugin
     private static readonly DpsWindow Window = new DpsWindow();
     private static readonly System.Collections.Generic.HashSet<EnemyCore> EstimatedKills = new System.Collections.Generic.HashSet<EnemyCore>();
     private static readonly EstimatedDps Estimates = new EstimatedDps();
-    private static readonly System.Reflection.FieldInfo GearHuds = AccessTools.Field(typeof(Player), "gearHUDs");
     private readonly LocalDpsLabel localLabel = new LocalDpsLabel();
+    private readonly BurstLabel burstLabel = new BurstLabel();
     private readonly StatsText fallbackText = new StatsText();
     private Harmony harmony;
     private bool ready;
     private bool localHudFailed;
+    private bool burstHudFailed;
     private bool missionHooksReady;
     private DpsNetwork network;
     private DamageRpcHooks damageRpcHooks;
@@ -40,10 +41,8 @@ public sealed class Plugin : BaseUnityPlugin
         try
         {
             harmony = new Harmony("mycopunk.dpschecker");
-            harmony.Patch(AccessTools.Method(typeof(PlayerData), "OnLocalPlayerDamageTarget"),
-                postfix: new HarmonyMethod(typeof(Plugin), "OnDamage"));
-            harmony.Patch(AccessTools.Method(typeof(PlayerData), "OnLocalPlayerKillTarget"),
-                postfix: new HarmonyMethod(typeof(Plugin), "OnLocalKill"));
+            harmony.CreateClassProcessor(typeof(LocalDamagePatch)).Patch();
+            harmony.CreateClassProcessor(typeof(LocalKillPatch)).Patch();
             SceneManager.sceneLoaded += OnSceneLoaded;
             network = new DpsNetwork(Logger);
             Instance = this;
@@ -60,34 +59,30 @@ public sealed class Plugin : BaseUnityPlugin
         }
         try
         {
-            harmony.Patch(AccessTools.Method(typeof(TeammateHUD), "Initialize"),
-                postfix: new HarmonyMethod(typeof(Plugin), "OnTeammateInitialize"));
-            var playerField = AccessTools.Field(typeof(TeammateHUD), "player");
-            if (playerField != null)
-                foreach (var hud in FindObjectsByType<TeammateHUD>(FindObjectsInactive.Include))
-                    if (playerField.GetValue(hud) is Player player) OnTeammateInitialize(hud, player);
+            harmony.CreateClassProcessor(typeof(TeammateInitializePatch)).Patch();
+            foreach (var hud in FindObjectsByType<TeammateHUD>(FindObjectsInactive.Include))
+                if (hud.player is Player player) OnTeammateInitialize(hud, player);
         }
         catch (System.Exception e) { Logger.LogWarning("DPS teammate HUD could not be hooked: " + e); }
         try
         {
-            harmony.Patch(AccessTools.Method(typeof(MissionManager), "OnMissionStarted_Client"),
-                postfix: new HarmonyMethod(typeof(Plugin), "OnMissionBoundary"));
-            harmony.Patch(AccessTools.Method(typeof(MissionManager), "OnDestroy"),
-                prefix: new HarmonyMethod(typeof(Plugin), "OnMissionBoundary"));
+            harmony.CreateClassProcessor(typeof(BurstDamagePatch)).Patch();
+        }
+        catch (System.Exception e) { Logger.LogWarning("DPS burst damage could not be hooked: " + e); }
+        try
+        {
+            harmony.CreateClassProcessor(typeof(MissionStartedPatch)).Patch();
+            harmony.CreateClassProcessor(typeof(MissionDestroyPatch)).Patch();
             missionHooksReady = true;
         }
         catch (System.Exception e) { Logger.LogWarning("DPS mission reset hooks could not be installed: " + e); }
         try
         {
-            harmony.Patch(AccessTools.Method(typeof(EnemyPart), "ApplyDamage_Server"),
-                prefix: new HarmonyMethod(typeof(Plugin), "OnEnemyDamageServer"));
-            harmony.Patch(AccessTools.Method(typeof(ObjectTarget), "ApplyDamage_Server"),
-                prefix: new HarmonyMethod(typeof(Plugin), "OnObjectDamageServer"));
-            harmony.Patch(AccessTools.Method(typeof(EnemyPart), "Kill_Server"),
-                prefix: new HarmonyMethod(typeof(Plugin), "OnEnemyKillServer"));
+            harmony.CreateClassProcessor(typeof(EnemyDamageServerPatch)).Patch();
+            harmony.CreateClassProcessor(typeof(ObjectDamageServerPatch)).Patch();
+            harmony.CreateClassProcessor(typeof(EnemyKillServerPatch)).Patch();
             damageRpcHooks = new DamageRpcHooks(Logger, OnEnemyDamageRpc, OnEnemyKillRpc);
-            harmony.Patch(AccessTools.Method(typeof(NetworkBehaviour), "InitializeVariables"),
-                postfix: new HarmonyMethod(typeof(Plugin), "OnNetworkVariablesInitialized"));
+            harmony.CreateClassProcessor(typeof(NetworkVariablesPatch)).Patch();
             damageRpcHooks.InstallExisting();
             Logger.LogInfo("DPS estimate: damage hooks installed.");
         }
@@ -97,10 +92,14 @@ public sealed class Plugin : BaseUnityPlugin
     private void OnDestroy()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
-        if (harmony != null) harmony.UnpatchSelf();
-        if (damageRpcHooks != null) damageRpcHooks.Dispose();
-        if (network != null) network.Dispose();
+        try { if (harmony != null) harmony.UnpatchSelf(); }
+        catch (System.Exception e) { Logger.LogWarning("DPS hook cleanup failed: " + e); }
+        try { if (damageRpcHooks != null) damageRpcHooks.Dispose(); }
+        catch (System.Exception e) { Logger.LogWarning("DPS RPC cleanup failed: " + e); }
+        try { if (network != null) network.Dispose(); }
+        catch (System.Exception e) { Logger.LogWarning("DPS network cleanup failed: " + e); }
         localLabel.Clear();
+        burstLabel.Clear();
         Instance = null;
         MycopunkShared.ModChannels.Publish(MycopunkShared.ModChannels.DpsStatsKey, null);
         foreach (TeammateDpsLabel label in FindObjectsByType<TeammateDpsLabel>(FindObjectsInactive.Include)) Destroy(label);
@@ -113,7 +112,9 @@ public sealed class Plugin : BaseUnityPlugin
     {
         if (!missionHooksReady) ResetStats();
         localLabel.Clear();
+        burstLabel.Clear();
         localHudFailed = false;
+        burstHudFailed = false;
     }
 
     private static void OnMissionBoundary(MissionManager __instance)
@@ -139,6 +140,20 @@ public sealed class Plugin : BaseUnityPlugin
         Window.Add(Time.unscaledTime, damage);
     }
 
+    private static void OnBurstDamage(ref DamageCallbackData data)
+    {
+        if (Instance == null || !Instance.ready) return;
+        float damage = data.damageData.damage;
+        if (damage <= 0 || float.IsNaN(damage) || float.IsInfinity(damage)) return;
+        try
+        {
+            if (ReferenceEquals(data.target, Player.LocalPlayer) && data.source != null &&
+                ReferenceEquals(data.source.GetBase(), data.target)) return;
+            Window.AddBurst(Time.unscaledTime, damage);
+        }
+        catch (System.Exception e) { Instance.Logger.LogWarning("DPS burst damage could not be recorded: " + e.Message); }
+    }
+
     private void Update()
     {
         if (!ready) return;
@@ -148,12 +163,28 @@ public sealed class Plugin : BaseUnityPlugin
     private void LateUpdate()
     {
         if (!ready) return;
+        if (!burstHudFailed)
+        {
+            try
+            {
+                var look = PlayerLook.Instance;
+                float remaining;
+                double damage = Window.Burst(Time.unscaledTime, out remaining);
+                burstLabel.Refresh(look != null ? look.PlayerTitleText : null, damage, remaining);
+            }
+            catch (System.Exception e)
+            {
+                burstHudFailed = true;
+                burstLabel.Clear();
+                Logger.LogWarning("DPS burst HUD could not be created: " + e);
+            }
+        }
         if (localHudFailed) return;
         try
         {
             PlayerLook look = PlayerLook.Instance;
             Player player = Player.LocalPlayer;
-            var gearHuds = player != null && GearHuds != null ? GearHuds.GetValue(player) as EquippableHUDOverlay[] : null;
+            var gearHuds = player != null ? player.gearHUDs : null;
             localLabel.Refresh(look != null ? look.PlayerTitleText : null, gearHuds, Window.Snapshot(Time.unscaledTime));
         }
         catch (System.Exception e)
@@ -357,5 +388,78 @@ public sealed class Plugin : BaseUnityPlugin
         if (!ready || player == null || localLabel.Visible) return;
         GUI.Box(new Rect(20, 20, 420, 44), GUIContent.none);
         GUI.Label(new Rect(30, 28, 400, 24), fallbackText.Get(Window.Snapshot(Time.unscaledTime), false, false, true));
+    }
+
+    // Harmony patch classes. Awake applies them in groups, each group in its own try/catch.
+
+    [HarmonyPatch(typeof(PlayerData), nameof(PlayerData.OnLocalPlayerDamageTarget))]
+    private static class LocalDamagePatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(ref DamageCallbackData data) => OnDamage(ref data);
+    }
+
+    [HarmonyPatch(typeof(PlayerData), nameof(PlayerData.OnLocalPlayerKillTarget))]
+    private static class LocalKillPatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(ref KillCallbackData data) => OnLocalKill(ref data);
+    }
+
+    [HarmonyPatch(typeof(TeammateHUD), nameof(TeammateHUD.Initialize))]
+    private static class TeammateInitializePatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(TeammateHUD __instance, Player player) => OnTeammateInitialize(__instance, player);
+    }
+
+    [HarmonyPatch(typeof(Highlighter), nameof(Highlighter.OnDamageTarget))]
+    private static class BurstDamagePatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix(ref DamageCallbackData data) => OnBurstDamage(ref data);
+    }
+
+    [HarmonyPatch(typeof(MissionManager), nameof(MissionManager.OnMissionStarted_Client))]
+    private static class MissionStartedPatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(MissionManager __instance) => OnMissionBoundary(__instance);
+    }
+
+    [HarmonyPatch(typeof(MissionManager), nameof(MissionManager.OnDestroy))]
+    private static class MissionDestroyPatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix(MissionManager __instance) => OnMissionBoundary(__instance);
+    }
+
+    [HarmonyPatch(typeof(EnemyPart), nameof(EnemyPart.ApplyDamage_Server))]
+    private static class EnemyDamageServerPatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix(EnemyPart __instance, DamageData data, IDamageSource source) => OnEnemyDamageServer(__instance, data, source);
+    }
+
+    [HarmonyPatch(typeof(ObjectTarget), nameof(ObjectTarget.ApplyDamage_Server))]
+    private static class ObjectDamageServerPatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix(ObjectTarget __instance, DamageData data, IDamageSource source) => OnObjectDamageServer(__instance, data, source);
+    }
+
+    [HarmonyPatch(typeof(EnemyPart), nameof(EnemyPart.Kill_Server))]
+    private static class EnemyKillServerPatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix(EnemyPart __instance, IDamageSource source) => OnEnemyKillServer(__instance, source);
+    }
+
+    // A string: NetworkBehaviour.InitializeVariables is internal to Unity.Netcode.Runtime, which is not publicized.
+    [HarmonyPatch(typeof(NetworkBehaviour), "InitializeVariables")]
+    private static class NetworkVariablesPatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(NetworkBehaviour __instance) => OnNetworkVariablesInitialized(__instance);
     }
 }

@@ -5,7 +5,12 @@
   <PropertyGroup>
     <AssemblyName>MycopunkQuickTimers</AssemblyName>
     <RootNamespace>MycopunkQuickTimers</RootNamespace>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- StartMenu's logo fields are UnityEngine.UI.Graphic; needed to name them with nameof. -->
+    <Reference Include="UnityEngine.UI" HintPath="$(ManagedDir)\UnityEngine.UI.dll" Private="false" />
+  </ItemGroup>
 
 </Project>

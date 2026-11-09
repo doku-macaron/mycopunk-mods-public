@@ -12,7 +12,7 @@ namespace MycopunkQuickTimers
     /// f1w3's.
     /// </summary>
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid, MycopunkShared.MacaronCore.Version)]
     // The mission timing options can affect the whole lobby when enabled by the host.
     // Without this attribute the game treats any BepInEx plugin as a sandbox mod.
     [MycoMod(null, ModFlags.IsClientSide)]
@@ -20,11 +20,12 @@ namespace MycopunkQuickTimers
     {
         public const string Guid = "f1w3.mycopunk.quicktimers";
         public const string Name = "Mycopunk Quick Timers";
-        public const string Version = "0.1.1";
+        public const string Version = "0.1.2";
 
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> FastDrop, FastMissionStart, FastMissionEnd, FastExtraction;
         private static ConfigEntry<bool> _fastStartup;
+        private Harmony _harmony;
 
         private void Awake()
         {
@@ -45,12 +46,14 @@ namespace MycopunkQuickTimers
                 "Shorten the local delay after the host confirms all mission statistics. If confirmation is unavailable, retain the original delay.",
                 null, MenuText.Label("quick.mission_end")));
 
-            var harmony = new Harmony(Guid);
-            StartupTiming.Setup(harmony);
-            MissionDelays.Setup(harmony);
-            if (_fastStartup.Value) StartupLogos.Setup(harmony);
+            _harmony = new Harmony(Guid);
+            StartupTiming.Setup(_harmony);
+            MissionDelays.Setup(_harmony);
+            if (_fastStartup.Value) StartupLogos.Setup(_harmony);
             Log.LogInfo(Name + " " + Version + " loaded (startup=" + _fastStartup.Value + ", drop=" + FastDrop.Value +
                 ", start=" + FastMissionStart.Value + ", end=" + FastMissionEnd.Value + ", extraction=" + FastExtraction.Value + ").");
         }
+
+        private void OnDestroy() => _harmony?.UnpatchSelf();
     }
 }

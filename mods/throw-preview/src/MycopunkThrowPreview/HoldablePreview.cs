@@ -29,27 +29,8 @@ namespace MycopunkThrowPreview
         private const int MaxSteps = 400;
         private const float Radius = 0.15f;
 
-        private static readonly AccessTools.FieldRef<HoldableObject, float> StartThrowTime =
-            AccessTools.FieldRefAccess<HoldableObject, float>("startThrowTime");
-        private static readonly AccessTools.FieldRef<HoldableObject, Rigidbody> Body =
-            AccessTools.FieldRefAccess<HoldableObject, Rigidbody>("rigidbody");
-        private static readonly AccessTools.FieldRef<HoldableObject, Player> Holder =
-            AccessTools.FieldRefAccess<HoldableObject, Player>("player");
-        private static readonly AccessTools.FieldRef<Player, LayerMask> GroundMask =
-            AccessTools.FieldRefAccess<Player, LayerMask>("groundLayerMask");
-        private static readonly AccessTools.FieldRef<DeadPlayerPart, float> ThrownGravity =
-            AccessTools.FieldRefAccess<DeadPlayerPart, float>("thrownGravity");
-
         private const float ConnectDistance = 2f; // HandleAutoConnect: sqrMagnitude < 4
 
-        private static readonly AccessTools.FieldRef<DeadPlayerPart, float> RepairProgress =
-            AccessTools.FieldRefAccess<DeadPlayerPart, float>("repairProgress");
-        private static readonly AccessTools.FieldRef<DeadPlayerPart, int> InitialSection =
-            AccessTools.FieldRefAccess<DeadPlayerPart, int>("initialActiveSection");
-        private static readonly System.Reflection.FieldInfo Sections = AccessTools.Field(typeof(DeadPlayerPart), "sections");
-        private static readonly System.Reflection.FieldInfo AllParts = AccessTools.Field(typeof(DeadPlayerPart), "allParts");
-        private static readonly System.Reflection.PropertyInfo AllSectionsActive = AccessTools.Property(typeof(DeadPlayerPart), "AreAllSectionsActive");
-        private static System.Reflection.FieldInfo _sectionParent, _sectionCollider;
         private static readonly List<Vector3> Targets = new List<Vector3>();
 
         /// <summary>True when the last arc joins a teammate's part to another of theirs (revives them).</summary>
@@ -58,18 +39,12 @@ namespace MycopunkThrowPreview
         private static HoldableObject _charging;
         private static readonly RaycastHit[] Hits = new RaycastHit[16];
 
-        public static void Install(Harmony harmony)
+        [HarmonyPatch(typeof(HoldableObject), nameof(HoldableObject.StartThrow))]
+        internal static class StartThrowPatch
         {
-            var start = AccessTools.Method(typeof(HoldableObject), "StartThrow");
-            if (start == null)
-            {
-                Plugin.Log.LogWarning("HoldableObject.StartThrow not found; arcs for held objects are off.");
-                return;
-            }
-            harmony.Patch(start, postfix: new HarmonyMethod(typeof(HoldablePreview), nameof(StartThrow_Postfix)));
+            [HarmonyPostfix]
+            private static void Postfix(HoldableObject __instance) => _charging = __instance;
         }
-
-        private static void StartThrow_Postfix(HoldableObject __instance) => _charging = __instance;
 
         /// <returns>True while an arc is to be drawn (filled into <paramref name="points"/>).</returns>
         public static bool Tick(List<Vector3> points)
@@ -78,14 +53,14 @@ namespace MycopunkThrowPreview
             if (h == null)
                 return false;
             // The object stops being Active when it leaves the hand (thrown or dropped).
-            if (!h.Active || Holder(h) != Player.LocalPlayer)
+            if (!h.Active || h.player != Player.LocalPlayer)
             {
                 _charging = null;
                 return false;
             }
-            if (!Plugin.HoldableArc.Value || StartThrowTime(h) <= 0f)
+            if (!Plugin.HoldableArc.Value || h.startThrowTime <= 0f)
                 return false;
-            var rb = Body(h);
+            var rb = h.rigidbody;
             if (rb == null)
                 return false;
             Predict(h, rb, points);
@@ -95,15 +70,19 @@ namespace MycopunkThrowPreview
         private static void Predict(HoldableObject h, Rigidbody rb, List<Vector3> points)
         {
             points.Clear();
-            Vector3 p = rb.position;
+            // Match the rendered body and camera, which can move after the last physics and Update steps.
+            Vector3 p = rb.transform.position;
             Vector3 v = h.CalculateCurrentThrowVelocity();
+            var look = PlayerLook.Instance;
+            if (look != null)
+                v = look.transform.forward * Vector3.Dot(v, PlayerLook.Forward);
             Vector3 a = rb.useGravity ? Physics.gravity : Vector3.zero;
             if (h is DeadPlayerPart part)
-                a += new Vector3(0f, ThrownGravity(part), 0f);
+                a += new Vector3(0f, part.thrownGravity, 0f);
             float dt = Time.fixedDeltaTime;
             float damp = 1f / (1f + dt * rb.linearDamping);
             var local = Player.LocalPlayer;
-            int mask = local != null ? GroundMask(local).value : Physics.DefaultRaycastLayers;
+            int mask = local != null ? local.groundLayerMask.value : Physics.DefaultRaycastLayers;
             if (mask == 0)
                 mask = Physics.DefaultRaycastLayers;
             var me = local != null ? local.transform : null;
@@ -111,7 +90,7 @@ namespace MycopunkThrowPreview
             // Where the part would join another one of the same teammate.
             Connects = false;
             Vector3 offset = default;
-            bool joinable = h is DeadPlayerPart dp && JoinTargets(dp, rb, out offset);
+            bool joinable = h is DeadPlayerPart dp && JoinTargets(dp, p, out offset);
 
             points.Add(p);
             if (joinable && Joins(p, offset))
@@ -148,20 +127,20 @@ namespace MycopunkThrowPreview
         /// Fills <see cref="Targets"/> with the centres of the other parts of the same teammate, and gives the offset of
         /// this part's centre from its rigidbody. False when the game would not join this part now.
         /// </summary>
-        private static bool JoinTargets(DeadPlayerPart part, Rigidbody rb, out Vector3 offset)
+        private static bool JoinTargets(DeadPlayerPart part, Vector3 bodyPosition, out Vector3 offset)
         {
             offset = default;
             Targets.Clear();
-            if (Sections == null || AllParts == null || part.ParentPlayer == null || RepairProgress(part) < 0f)
+            if (part.ParentPlayer == null || part.repairProgress < 0f)
                 return false;
-            if (AllSectionsActive != null && AllSectionsActive.GetValue(part) is bool all && all)
+            if (part.AreAllSectionsActive)
                 return false;
-            if (!(AllParts.GetValue(null) is Dictionary<Player, List<DeadPlayerPart>> parts) ||
-                !parts.TryGetValue(part.ParentPlayer, out var list))
+            var parts = DeadPlayerPart.allParts;
+            if (parts == null || !parts.TryGetValue(part.ParentPlayer, out var list))
                 return false;
             if (!Centre(part, out var mine))
                 return false;
-            offset = mine - rb.position;
+            offset = mine - bodyPosition;
             foreach (var other in list)
                 if (other != null && other != part && Centre(other, out var c))
                     Targets.Add(c);
@@ -172,19 +151,15 @@ namespace MycopunkThrowPreview
         private static bool Centre(DeadPlayerPart part, out Vector3 centre)
         {
             centre = default;
-            if (!(Sections.GetValue(part) is System.Array sections))
+            var sections = part.sections;
+            if (sections == null)
                 return false;
-            int i = InitialSection(part);
+            int i = part.initialActiveSection;
             if (i < 0 || i >= sections.Length)
                 return false;
-            object section = sections.GetValue(i);
-            if (_sectionParent == null)
-            {
-                _sectionParent = AccessTools.Field(section.GetType(), "parent");
-                _sectionCollider = AccessTools.Field(section.GetType(), "mainCollider");
-            }
-            var parent = _sectionParent?.GetValue(section) as GameObject;
-            var box = _sectionCollider?.GetValue(section) as BoxCollider;
+            var section = sections[i];
+            var parent = section.parent;
+            var box = section.mainCollider;
             if (parent == null || box == null)
                 return false;
             centre = parent.transform.position + parent.transform.rotation * box.center;

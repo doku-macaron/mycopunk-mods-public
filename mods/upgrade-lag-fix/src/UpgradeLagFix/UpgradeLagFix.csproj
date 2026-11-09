@@ -5,7 +5,7 @@
   <PropertyGroup>
     <AssemblyName>UpgradeLagFix</AssemblyName>
     <RootNamespace>UpgradeLagFix</RootNamespace>
-    <Version>1.1.1</Version>
+    <Version>1.1.2</Version>
     <!-- shared/Menu: the MODS tab in the game's options window. -->
     <UseSharedMenu>true</UseSharedMenu>
   </PropertyGroup>

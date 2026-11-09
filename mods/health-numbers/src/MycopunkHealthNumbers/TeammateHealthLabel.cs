@@ -26,9 +26,6 @@ namespace MycopunkHealthNumbers
         internal const string LineId = "t4t5u0.healthnumbers";
         internal const int LineOrder = 50;
 
-        private static readonly System.Reflection.FieldInfo NameField = AccessTools.Field(typeof(TeammateHUD), "nameText");
-        private static readonly System.Reflection.FieldInfo PlayerField = AccessTools.Field(typeof(TeammateHUD), "player");
-
         private TeammateHUD _hud;
         private Player _player;
         private TextMeshProUGUI _nameText;
@@ -38,16 +35,21 @@ namespace MycopunkHealthNumbers
 
         public static void Install(Harmony harmony)
         {
-            var init = AccessTools.Method(typeof(TeammateHUD), "Initialize");
-            if (init == null || !UnityTeammateHud.Available || NameField == null)
+            if (!UnityTeammateHud.Available)
             {
                 Plugin.Log.LogWarning("TeammateHUD.Initialize or its fields not found; teammate health numbers are off.");
                 return;
             }
-            harmony.Patch(init, postfix: new HarmonyMethod(typeof(TeammateHealthLabel), nameof(Initialize_Postfix)));
-            if (PlayerField != null)
-                foreach (var hud in Object.FindObjectsByType<TeammateHUD>(FindObjectsInactive.Include))
-                    if (PlayerField.GetValue(hud) is Player player) Initialize_Postfix(hud, player);
+            harmony.CreateClassProcessor(typeof(InitializePatch)).Patch();
+            foreach (var hud in Object.FindObjectsByType<TeammateHUD>(FindObjectsInactive.Include))
+                if (hud.player is Player player) Initialize_Postfix(hud, player);
+        }
+
+        [HarmonyPatch(typeof(TeammateHUD), nameof(TeammateHUD.Initialize))]
+        private static class InitializePatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(TeammateHUD __instance, Player player) => Initialize_Postfix(__instance, player);
         }
 
         private static void Initialize_Postfix(TeammateHUD __instance, Player player)
@@ -59,7 +61,7 @@ namespace MycopunkHealthNumbers
                     label = __instance.gameObject.AddComponent<TeammateHealthLabel>();
                 label._hud = __instance;
                 label._player = player;
-                label._nameText = NameField.GetValue(__instance) as TextMeshProUGUI;
+                label._nameText = __instance.nameText;
                 label._label = null; // re-acquired (the line may have been laid out again)
                 label._shown = null;
             }

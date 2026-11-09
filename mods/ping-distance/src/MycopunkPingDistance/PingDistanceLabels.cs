@@ -1,6 +1,4 @@
 using System.Collections.Generic;
-using System.Reflection;
-using HarmonyLib;
 using Pigeon.Movement;
 using TMPro;
 using UnityEngine;
@@ -22,8 +20,6 @@ namespace MycopunkPingDistance
     internal sealed class PingDistanceLabels : MonoBehaviour
     {
         private const string LabelName = "MycoPingDistance";
-
-        private static readonly FieldInfo TopText = AccessTools.Field(typeof(Minimap), "topText");
 
         private sealed class Label
         {
@@ -165,8 +161,8 @@ namespace MycopunkPingDistance
         private static TextMeshProUGUI FontSource()
         {
             TextMeshProUGUI t = null;
-            if (TopText != null && Highlighter.TryGetInstance(out var h) && h.Map != null)
-                t = TopText.GetValue(h.Map) as TextMeshProUGUI;
+            if (Highlighter.TryGetInstance(out var h) && h.Map != null)
+                t = h.Map.topText;
             if (t == null || t.font == null)
             {
                 var look = PlayerLook.Instance;

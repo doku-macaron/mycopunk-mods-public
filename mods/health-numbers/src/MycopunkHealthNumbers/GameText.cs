@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using MycopunkShared;
 
 namespace MycopunkHealthNumbers
 {
@@ -8,16 +9,7 @@ namespace MycopunkHealthNumbers
     {
         public static TextMeshProUGUI Create(TextMeshProUGUI template, Transform parent, string name)
         {
-            var label = Object.Instantiate(template, parent, false);
-            label.name = name;
-            // The copy may bring children of the template along; only the text itself is wanted.
-            for (int i = label.transform.childCount - 1; i >= 0; i--)
-                Object.Destroy(label.transform.GetChild(i).gameObject);
-            label.raycastTarget = false;
-            label.richText = false;
-            label.enableAutoSizing = false;
-            label.textWrappingMode = TextWrappingModes.NoWrap;
-            label.overflowMode = TextOverflowModes.Overflow;
+            var label = GameHudText.Create(template, parent, name);
             label.alignment = TextAlignmentOptions.MidlineLeft;
             var rt = label.rectTransform;
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -49,16 +41,5 @@ namespace MycopunkHealthNumbers
             }
         }
 
-        public static void SetText(TextMeshProUGUI label, string text)
-        {
-            if (!ReferenceEquals(label.text, text) && label.text != text)
-                label.text = text;
-        }
-
-        public static void SetActive(TextMeshProUGUI label, bool on)
-        {
-            if (label.gameObject.activeSelf != on)
-                label.gameObject.SetActive(on);
-        }
     }
 }

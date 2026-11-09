@@ -17,7 +17,7 @@ namespace MycopunkXpNumbers
             },
             ["ja"] = new Dictionary<string, string>
             {
-                ["xp.level"] = "レベルバーに経験値を表示",
+                ["xp.level"] = "レベルバーにXPを表示",
             },
         };
 
@@ -25,7 +25,7 @@ namespace MycopunkXpNumbers
         {
             ["ja"] = new Dictionary<string, string>
             {
-                ["xp.level"] = "レベルバーの横に現在のレベルで得た経験値と次のレベルまでに必要な経験値を表示します。TAB の画面、ビルド画面、ミッションのリザルト画面に出ます。次にバーが更新されたときから反映されます。",
+                ["xp.level"] = "レベルバーの横に、現在のレベルで得たXPと、次のレベルまでに必要なXPを表示します。TAB の画面、ビルド画面、ミッションのリザルト画面に表示されます。次にバーが更新されたときから反映されます。",
             },
         };
 

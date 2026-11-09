@@ -15,60 +15,50 @@ namespace MycopunkXpNumbers
     /// </summary>
     internal static class XpBars
     {
-        private static readonly AccessTools.FieldRef<GearDetailsWindow, TextMeshProUGUI> DetailsText =
-            AccessTools.FieldRefAccess<GearDetailsWindow, TextMeshProUGUI>("levelText");
-        private static readonly AccessTools.FieldRef<GearSelectionWindow, TextMeshProUGUI> SelectionText =
-            AccessTools.FieldRefAccess<GearSelectionWindow, TextMeshProUGUI>("levelText");
-
-        public static void Install(Harmony harmony)
+        [HarmonyPatch(typeof(GearDetailsWindow), nameof(GearDetailsWindow.UpdateXPBar))]
+        internal static class DetailsPatch
         {
-            var details = AccessTools.Method(typeof(GearDetailsWindow), "UpdateXPBar");
-            if (details != null)
-                harmony.Patch(details, postfix: new HarmonyMethod(typeof(XpBars), nameof(Details_Postfix)));
-            else
-                Plugin.Log.LogWarning("GearDetailsWindow.UpdateXPBar not found; no XP numbers on the build screen.");
-
-            var selection = AccessTools.Method(typeof(GearSelectionWindow), "UpdateXPBar");
-            if (selection != null)
-                harmony.Patch(selection, postfix: new HarmonyMethod(typeof(XpBars), nameof(Selection_Postfix)));
-            else
-                Plugin.Log.LogWarning("GearSelectionWindow.UpdateXPBar not found; no XP numbers on the class screen.");
-        }
-
-        private static void Details_Postfix(GearDetailsWindow __instance)
-        {
-            try
+            [HarmonyPostfix]
+            private static void Postfix(GearDetailsWindow __instance)
             {
-                if (!Plugin.Enabled.Value)
-                    return;
-                var prefab = __instance.UpgradablePrefab;
-                var text = DetailsText(__instance);
-                string xp = prefab != null ? Progress(PlayerData.GetGearData(prefab)) : "";
-                if (text != null && xp.Length > 0)
-                    text.text = text.text + "  <size=80%>" + xp + "</size>";
-            }
-            catch (System.Exception e)
-            {
-                Plugin.Log.LogWarning("XP numbers on the build screen failed: " + e);
+                try
+                {
+                    if (!Plugin.Enabled.Value)
+                        return;
+                    var prefab = __instance.UpgradablePrefab;
+                    var text = __instance.levelText;
+                    string xp = prefab != null ? Progress(PlayerData.GetGearData(prefab)) : "";
+                    if (text != null && xp.Length > 0)
+                        text.text = text.text + "  <size=80%>" + xp + "</size>";
+                }
+                catch (System.Exception e)
+                {
+                    Plugin.Log.LogWarning("XP numbers on the build screen failed: " + e);
+                }
             }
         }
 
-        private static void Selection_Postfix(GearSelectionWindow __instance)
+        [HarmonyPatch(typeof(GearSelectionWindow), nameof(GearSelectionWindow.UpdateXPBar))]
+        internal static class SelectionPatch
         {
-            try
+            [HarmonyPostfix]
+            private static void Postfix(GearSelectionWindow __instance)
             {
-                if (!Plugin.Enabled.Value)
-                    return;
-                var player = Player.LocalPlayer;
-                var character = player != null ? player.Character : null;
-                var text = SelectionText(__instance);
-                string xp = character != null ? Progress(PlayerData.GetGearData(character)) : "";
-                if (text != null && xp.Length > 0)
-                    text.text = "<size=70%>" + xp + "</size>  " + text.text;
-            }
-            catch (System.Exception e)
-            {
-                Plugin.Log.LogWarning("XP numbers on the class screen failed: " + e);
+                try
+                {
+                    if (!Plugin.Enabled.Value)
+                        return;
+                    var player = Player.LocalPlayer;
+                    var character = player != null ? player.Character : null;
+                    var text = __instance.levelText;
+                    string xp = character != null ? Progress(PlayerData.GetGearData(character)) : "";
+                    if (text != null && xp.Length > 0)
+                        text.text = "<size=70%>" + xp + "</size>  " + text.text;
+                }
+                catch (System.Exception e)
+                {
+                    Plugin.Log.LogWarning("XP numbers on the class screen failed: " + e);
+                }
             }
         }
 

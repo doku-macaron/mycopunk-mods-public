@@ -9,7 +9,7 @@ using UnityEngine.InputSystem;
 namespace UpgradeLagFix
 {
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid, MycopunkShared.MacaronCore.Version)]
     // Client-side, no gameplay changes (same stats, same apply order, only faster lookups).
     // Without this attribute the game treats any BepInEx plugin as a sandbox mod.
     [MycoMod(null, ModFlags.IsClientSide)]
@@ -17,7 +17,7 @@ namespace UpgradeLagFix
     {
         public const string Guid = "t4t5u0.UpgradeLagFix";
         public const string Name = "Upgrade Lag Fix";
-        public const string Version = "1.1.1";
+        public const string Version = "1.1.2";
 
         internal static ManualLogSource Log;
 
@@ -34,6 +34,7 @@ namespace UpgradeLagFix
         private static ConfigEntry<float> _dumpSeconds;
         private static ConfigEntry<bool> _dumpOnEvents;
         private static bool _cacheFaulted;
+        private Harmony _harmony;
 
         // Temporary overrides used by the benchmark.
         internal static bool? CacheOverride;
@@ -116,13 +117,13 @@ namespace UpgradeLagFix
             }
             Hotkeys.ReportConflicts(this);
 
-            var harmony = new Harmony(Guid);
-            ModsMenu.Install(harmony, this);
-            Patches.ApplyAll(harmony, _detailedProfiling.Value);
-            CleanupMemo.Setup(harmony);
-            PrepareMemo.Setup(harmony);
-            StackingMemo.Setup(harmony);
-            SessionLog.Setup(harmony, Log, _sessionFile.Value, _dumpSeconds.Value, _dumpOnEvents.Value);
+            _harmony = new Harmony(Guid);
+            ModsMenu.Install(_harmony, this);
+            Patches.ApplyAll(_harmony, _detailedProfiling.Value);
+            CleanupMemo.Setup(_harmony);
+            PrepareMemo.Setup(_harmony);
+            StackingMemo.Setup(_harmony);
+            SessionLog.Setup(_harmony, Log, _sessionFile.Value, _dumpSeconds.Value, _dumpOnEvents.Value);
             Log.LogInfo(Name + " " + Version + " loaded. " + ModeString + ", detailed profiling=" + _detailedProfiling.Value +
                 (SessionLog.FilePath != null ? ", session log: " + SessionLog.FilePath : ""));
         }
@@ -140,7 +141,11 @@ namespace UpgradeLagFix
             SessionLog.OnQuit();
         }
 
-        private void OnDestroy() => SessionLog.OnQuit();
+        private void OnDestroy()
+        {
+            SessionLog.OnQuit();
+            _harmony?.UnpatchSelf();
+        }
 
         private static void OnModeChanged()
         {

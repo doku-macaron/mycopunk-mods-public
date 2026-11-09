@@ -7,18 +7,20 @@ using MycopunkShared;
 namespace MycopunkXpNumbers
 {
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid, MycopunkShared.MacaronCore.Version)]
     // Client-side and not a sandbox mod: it only adds text to the local menus and reads the save.
     [MycoMod(null, ModFlags.IsClientSide)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "t4t5u0.mycopunk.xpnumbers";
         public const string Name = "Mycopunk XP Numbers";
-        public const string Version = "0.2.1";
+        public const string Version = "0.2.2";
 
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<float> ResultsFontScale;
+
+        private Harmony _harmony;
 
         private void Awake()
         {
@@ -33,24 +35,20 @@ namespace MycopunkXpNumbers
                 new AcceptableValueRange<float>(0.3f, 2f)));
 
             // Each part on its own, so one failing (game update) does not take the others down.
-            var harmony = new Harmony(Guid);
-            Try("XP numbers", () => XpBars.Install(harmony));
-            Try("XP numbers on the mission results", () => XpResults.Install(harmony));
-            Try("MODS tab", () => ModsMenu.Install(harmony, this));
-            Try("hotkey report", () => Hotkeys.ReportConflicts(this));
+            _harmony = new Harmony(Guid);
+            ModSetup.Try(Log, "XP numbers", () => _harmony.CreateClassProcessor(typeof(XpBars.DetailsPatch)).Patch());
+            ModSetup.Try(Log, "XP numbers", () => _harmony.CreateClassProcessor(typeof(XpBars.SelectionPatch)).Patch());
+            ModSetup.Try(Log, "XP numbers on the mission results", () => _harmony.CreateClassProcessor(typeof(XpResults.ShowXPPatch)).Patch());
+            ModSetup.Try(Log, "MODS tab", () => ModsMenu.Install(_harmony, this));
+            ModSetup.Try(Log, "hotkey report", () => Hotkeys.ReportConflicts(this));
             Log.LogInfo(Name + " " + Version + " loaded (enabled=" + Enabled.Value + ").");
         }
 
-        private static void Try(string what, System.Action action)
+
+        private void OnDestroy()
         {
-            try
-            {
-                action();
-            }
-            catch (System.Exception e)
-            {
-                Log.LogError("Could not set up " + what + "; it is off: " + e);
-            }
+            _harmony?.UnpatchSelf();
+            XpResults.Cleanup();
         }
     }
 }

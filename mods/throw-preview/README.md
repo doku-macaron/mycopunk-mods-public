@@ -2,6 +2,8 @@
 
 Draws the arc of what you are about to throw. For grenades, hold the grenade key to aim with a dashed arc and a marker where it will explode, then release to throw. For held objects (a downed teammate's parts, barrels, rocks and so on), the arc and landing point show while you charge the throw.
 
+The arc and landing marker are drawn in the 3D world and are hidden by intervening walls.
+
 ## Features
 
 - **Grenades: hold to aim, release to throw.** The game normally throws the moment you press the key. With this mod, holding the key shows the arc; releasing it throws. A quick tap still throws almost at once.
@@ -26,9 +28,9 @@ The config file is `BepInEx/config/t4t5u0.mycopunk.throwpreview.cfg`. Settings m
 | `Holdables.ShowArc` \* | true | Show the arc while charging a throw of a held object |
 | `Style.Color` \* | white, 75% | Arc colour |
 | `Style.ReviveColor` \* | green, 90% | Arc colour when a thrown teammate part would revive them |
-| `Style.Thickness` | 3 | Arc thickness, in HUD units |
-| `Style.DashLength` | 12 | Length of each dash, in HUD units |
-| `Style.GapLength` | 8 | Gap between dashes, in HUD units (0 = solid line) |
+| `Style.Thickness` | 3 | Arc thickness (1 unit = 0.01 m) |
+| `Style.DashLength` | 12 | Length of each dash (1 unit = 0.05 m) |
+| `Style.GapLength` | 8 | Gap between dashes (1 unit = 0.05 m; 0 = solid line) |
 
 ## Multiplayer
 

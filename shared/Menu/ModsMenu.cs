@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using BepInEx;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
@@ -33,11 +32,11 @@ namespace MycopunkShared
     ///      HSV(x, y, 1), so the bottom edge is white; the alpha of the entry is kept. The handle's fill shows the
     ///      colour (its CharacterGraphic, which follows the UI colour, is removed).
     ///  - a heading per mod is a copy of a row's name text on an empty row.
-    /// The game's UI types are mostly used through reflection (by name), so a game update fails here with a log line
-    /// instead of breaking the build or the window.
+    /// The game's UI types are used directly (publicized game assembly). Building is wrapped in try/catch, so a game
+    /// update that changes them fails here with a log line instead of breaking the window.
     ///
-    /// Each mod compiles its own copy; the first one to call <see cref="Install"/> in the process builds the tab
-    /// (AppDomain data), so the tab exists once with every mod's entries.
+    /// The first caller of <see cref="Install"/> in the process builds the tab (AppDomain data), so the tab exists
+    /// once with every mod's entries.
     /// </summary>
     public static class ModsMenu
     {
@@ -47,7 +46,8 @@ namespace MycopunkShared
 
         private static ManualLogSource _log;
         private static readonly List<Row> Rows = new List<Row>();
-        private static readonly FieldInfo HoverText = AccessTools.Field(typeof(Pigeon.HoverInfoText), "text");
+        private static Transform _items, _toggleTemplate, _colorTemplate;
+        private static string[] _groupNames = Array.Empty<string>();
 
         private abstract class Row
         {
@@ -76,50 +76,97 @@ namespace MycopunkShared
 
         public static void Install(Harmony harmony, BaseUnityPlugin host)
         {
+            Harmony menuHarmony = null;
             try
             {
                 var domain = AppDomain.CurrentDomain;
                 if (domain.GetData(BuilderKey) != null) return;
-                domain.SetData(BuilderKey, host.Info.Metadata.GUID);
                 _log = BepInEx.Logging.Logger.CreateLogSource("ModsMenu");
-                var awake = AccessTools.Method(typeof(PlayerOptions), "Awake");
-                var onOpen = AccessTools.Method(typeof(PlayerOptions), "OnOpen");
-                var languageInit = AccessTools.Method(typeof(TextBlocks), "Initialize");
-                if (awake == null) { _log.LogWarning("PlayerOptions.Awake not found; no MODS tab."); return; }
-                var menuHarmony = new Harmony("MycopunkShared.ModsMenu");
-                menuHarmony.Patch(awake, prefix: new HarmonyMethod(typeof(ModsMenu), nameof(AwakePrefix)));
-                if (onOpen != null) menuHarmony.Patch(onOpen, postfix: new HarmonyMethod(typeof(ModsMenu), nameof(OnOpenPostfix)));
-                if (languageInit != null) menuHarmony.Patch(languageInit, postfix: new HarmonyMethod(typeof(ModsMenu), nameof(RefreshLabels)));
+                menuHarmony = new Harmony("MycopunkShared.ModsMenu");
+                // Without the Awake prefix there is no tab, so a failure there stops here (logged below).
+                menuHarmony.CreateClassProcessor(typeof(AwakePatch)).Patch();
+                // The other two only refresh the rows; the tab works without them.
+                TryPatch(menuHarmony, typeof(OnOpenPatch));
+                TryPatch(menuHarmony, typeof(LanguagePatch));
+                // Marked only once hooked: if this attempt fails, the next mod's Install tries again.
+                domain.SetData(BuilderKey, host.Info.Metadata.GUID);
             }
             catch (Exception e)
             {
+                // Take back what this attempt applied, so a later attempt does not patch twice.
+                try { menuHarmony?.UnpatchSelf(); }
+                catch (Exception cleanup) { (_log ?? (_log = BepInEx.Logging.Logger.CreateLogSource("ModsMenu"))).LogWarning("MODS tab patch cleanup failed: " + cleanup); }
                 (_log ?? (_log = BepInEx.Logging.Logger.CreateLogSource("ModsMenu"))).LogWarning("MODS tab disabled: " + e);
             }
         }
 
-        private static void AwakePrefix(PlayerOptions __instance)
+        private static void TryPatch(Harmony harmony, Type patch)
         {
-            try { Build(__instance); }
-            catch (Exception e) { _log.LogWarning("MODS tab could not be built: " + e); }
+            try { harmony.CreateClassProcessor(patch).Patch(); }
+            catch (Exception e) { _log.LogWarning("MODS tab: " + patch.Name + " not applied: " + e.Message); }
         }
 
-        private static void OnOpenPostfix()
+        [HarmonyPatch(typeof(PlayerOptions), nameof(PlayerOptions.Awake))]
+        private static class AwakePatch
+        {
+            [HarmonyPrefix]
+            private static void Prefix(PlayerOptions __instance)
+            {
+                try { Build(__instance); }
+                catch (Exception e) { _log.LogWarning("MODS tab could not be built: " + e); }
+            }
+        }
+
+        [HarmonyPatch(typeof(PlayerOptions), nameof(PlayerOptions.OnOpen))]
+        private static class OnOpenPatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix() => OnOpened();
+        }
+
+        [HarmonyPatch(typeof(TextBlocks), nameof(TextBlocks.Initialize))]
+        private static class LanguagePatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix() => RefreshLabels();
+        }
+
+        private static void OnOpened()
         {
             try
             {
-                foreach (var row in Rows)
-                {
-                    if (row.Go == null) continue;
-                    if (Chainloader.PluginInfos.TryGetValue(row.Owner, out var info) && info.Instance != null)
-                    {
-                        var entry = info.Instance.Config.FirstOrDefault(p => p.Key.Equals(row.Entry.Definition)).Value;
-                        if (entry != null) row.Entry = entry;
-                    }
-                    row.Refresh();
-                }
-                RefreshLabels();
+                Refresh();
             }
             catch (Exception e) { _log.LogWarning("MODS tab refresh failed: " + e.Message); }
+        }
+
+        /// <summary>Rebuilds the current MODS tab after plugins or their config entries change.</summary>
+        public static void Refresh()
+        {
+            if (_items == null || _toggleTemplate == null) return;
+            var groups = CollectEntries();
+            var entries = groups.SelectMany(g => g.Items)
+                .Where(i => i.Entry.SettingType == typeof(bool) || _colorTemplate != null).ToArray();
+            var rows = Rows.Where(r => r.Go != null && r.Go.transform.parent == _items).ToArray();
+            bool same = _groupNames.SequenceEqual(groups.Select(g => g.Mod)) && rows.Length == entries.Length;
+            for (int i = 0; same && i < rows.Length; i++)
+                same = rows[i].Owner == entries[i].Owner && rows[i].Entry.Definition.Equals(entries[i].Entry.Definition) &&
+                    rows[i].Entry.SettingType == entries[i].Entry.SettingType;
+            if (same)
+            {
+                for (int i = 0; i < rows.Length; i++) { rows[i].Entry = entries[i].Entry; rows[i].Refresh(); }
+            }
+            else Populate(_items, _toggleTemplate, _colorTemplate, groups);
+            RefreshLabels();
+        }
+
+        private static bool Rebind(Row row)
+        {
+            if (!Chainloader.PluginInfos.TryGetValue(row.Owner, out var info) || info.Instance == null) return false;
+            var entry = info.Instance.Config.FirstOrDefault(p => p.Key.Equals(row.Entry.Definition)).Value;
+            if (entry == null || entry.SettingType != row.Entry.SettingType) return false;
+            row.Entry = entry;
+            return true;
         }
 
         private sealed class Item
@@ -160,18 +207,16 @@ namespace MycopunkShared
 
         private static void Build(PlayerOptions po)
         {
-            var sectionsField = AccessTools.Field(typeof(PlayerOptions), "sections");
-            var buttonsField = AccessTools.Field(typeof(PlayerOptions), "sectionButtons");
-            var sections = sectionsField?.GetValue(po) as RectTransform[];
-            var buttons = buttonsField?.GetValue(po) as Array;
+            var sections = po.sections;
+            var buttons = po.sectionButtons;
             if (sections == null || buttons == null) { _log.LogWarning("PlayerOptions.sections / sectionButtons not found; no MODS tab."); return; }
             if (sections.Any(s => s != null && s.name == TabName)) return;
 
             var groups = CollectEntries();
             if (groups.Count == 0) { _log.LogInfo("No config entries are marked for the MODS tab."); return; }
 
-            var buttonList = buttons.Cast<Component>().ToList();
-            Component graphicsButton = buttonList.FirstOrDefault(b => b != null && b.name == "Graphics");
+            var buttonList = buttons.ToList();
+            Pigeon.UI.DefaultButton graphicsButton = buttonList.FirstOrDefault(b => b != null && b.name == "Graphics");
             RectTransform debugSection = sections.FirstOrDefault(s => s != null && s.name == "Debug");
             RectTransform gameplaySection = sections.FirstOrDefault(s => s != null && s.name == "Gameplay");
             Transform toggleTemplate = gameplaySection != null ? gameplaySection.Find("Items/HideHUD") : null;
@@ -184,8 +229,6 @@ namespace MycopunkShared
             if (colorTemplate == null)
                 _log.LogWarning("MODS tab: Gameplay/Items/UIColor not found; colour entries are left out.");
             int index = sections.Length;
-            var setSection = AccessTools.Method(typeof(PlayerOptions), "SetSection", new[] { typeof(int) });
-            if (setSection == null) { _log.LogWarning("PlayerOptions.SetSection(int) not found; no MODS tab."); return; }
 
             // Tab button: a copy of Graphics, one step below it; what was there moves down.
             var graphicsRect = (RectTransform)graphicsButton.transform;
@@ -196,12 +239,12 @@ namespace MycopunkShared
             foreach (var b in buttonList)
                 if (b != null && b != graphicsButton && b.transform is RectTransform r && r.anchoredPosition.y <= buttonRect.anchoredPosition.y + 0.5f)
                     r.anchoredPosition += new Vector2(0, -Step);
-            foreach (var c in buttonGo.GetComponentsInChildren<Component>(true))
-                if (c != null && c.GetType().Name == "SetTextBlock") UnityEngine.Object.DestroyImmediate(c);
+            foreach (var c in buttonGo.GetComponentsInChildren<SetTextBlock>(true))
+                if (c != null) UnityEngine.Object.DestroyImmediate(c);
             var buttonText = buttonGo.GetComponentInChildren<TextMeshProUGUI>(true);
             if (buttonText != null) buttonText.text = "MODS";
-            var tabButton = buttonGo.GetComponent(graphicsButton.GetType());
-            ReplaceEvent(tabButton, "OnClickUp", () => setSection.Invoke(po, new object[] { index }));
+            var tabButton = (Pigeon.UI.DefaultButton)buttonGo.GetComponent(graphicsButton.GetType());
+            ReplaceEvent(tabButton, () => po.SetSection(index));
 
             // Tab body: a copy of Debug without its items.
             var bodyGo = UnityEngine.Object.Instantiate(debugSection.gameObject, debugSection.parent, false);
@@ -211,40 +254,50 @@ namespace MycopunkShared
             if (itemsParent == null) { UnityEngine.Object.DestroyImmediate(bodyGo); UnityEngine.Object.DestroyImmediate(buttonGo); _log.LogWarning("Debug/Items not found; no MODS tab."); return; }
             for (int i = itemsParent.childCount - 1; i >= 0; i--) UnityEngine.Object.DestroyImmediate(itemsParent.GetChild(i).gameObject);
 
-            // Rows. The options window is rebuilt when its scene loads again (e.g. back to the title screen), so drop
-            // the rows of a window that is gone and count only this one's.
-            Rows.RemoveAll(r => r.Go == null);
-            int added = 0;
+            int added = Populate(itemsParent, toggleTemplate, colorTemplate, groups);
+
+            // Register with the window before its Awake sizes sectionPositions.
+            po.sections = sections.Concat(new[] { (RectTransform)bodyGo.transform }).ToArray();
+            po.sectionButtons = buttons.Concat(new[] { tabButton }).ToArray();
+            _items = itemsParent;
+            _toggleTemplate = toggleTemplate;
+            _colorTemplate = colorTemplate;
+            _log.LogInfo("MODS tab added with " + added + " entries in " + groups.Count + " groups.");
+        }
+
+        private static int Populate(Transform items, Transform toggleTemplate, Transform colorTemplate, List<Group> groups)
+        {
             var holder = new GameObject("ModsMenu holder");
             holder.SetActive(false);
+            var rows = new List<Row>();
             try
             {
                 foreach (var group in groups)
                 {
-                    var heading = MakeHeading(toggleTemplate.gameObject, holder.transform, group.Mod);
-                    if (heading != null) heading.transform.SetParent(itemsParent, false);
+                    MakeHeading(toggleTemplate.gameObject, holder.transform, group.Mod);
                     foreach (var item in group.Items)
                     {
                         Row row = item.Entry.SettingType == typeof(bool)
                             ? MakeToggleRow(toggleTemplate.gameObject, holder.transform, item)
                             : colorTemplate != null ? MakeColorRow(colorTemplate.gameObject, holder.transform, item) : null;
                         if (row == null) continue;
-                        row.Go.transform.SetParent(itemsParent, false);
-                        Rows.Add(row);
-                        added++;
+                        rows.Add(row);
                         row.Refresh();
                     }
                 }
+                for (int i = items.childCount - 1; i >= 0; i--)
+                {
+                    var child = items.GetChild(i).gameObject;
+                    child.SetActive(false);
+                    UnityEngine.Object.Destroy(child);
+                }
+                Rows.RemoveAll(r => r.Go == null || r.Go.transform.parent == items);
+                while (holder.transform.childCount > 0) holder.transform.GetChild(0).SetParent(items, false);
+                Rows.AddRange(rows);
+                _groupNames = groups.Select(g => g.Mod).ToArray();
+                return rows.Count;
             }
             finally { UnityEngine.Object.Destroy(holder); }
-
-            // Register with the window before its Awake sizes sectionPositions.
-            sectionsField.SetValue(po, sections.Concat(new[] { (RectTransform)bodyGo.transform }).ToArray());
-            var newButtons = Array.CreateInstance(buttons.GetType().GetElementType(), buttons.Length + 1);
-            Array.Copy(buttons, newButtons, buttons.Length);
-            newButtons.SetValue(tabButton, buttons.Length);
-            buttonsField.SetValue(po, newButtons);
-            _log.LogInfo("MODS tab added with " + added + " entries in " + groups.Count + " groups.");
         }
 
         /// <summary>A heading: a copy of the toggle row with everything but its name text taken off.</summary>
@@ -279,11 +332,14 @@ namespace MycopunkShared
             // Inside the inactive holder nothing on the copy runs (no Awake / OnEnable) until it is moved out.
             var go = UnityEngine.Object.Instantiate(template, holder, false);
             go.name = "Mod " + item.Label;
-            foreach (var c in go.GetComponents<Component>())
-                if (c != null && c.GetType().Name == "ToggleOption") UnityEngine.Object.DestroyImmediate(c);
-            Component button = go.GetComponents<Component>().FirstOrDefault(c => c != null && FindField(c.GetType(), "OnClickUp") != null);
+            foreach (var c in go.GetComponents<ToggleOption>())
+                if (c != null) UnityEngine.Object.DestroyImmediate(c);
+            var button = go.GetComponent<Pigeon.UI.Button>();
             var nameText = go.transform.Find("Name")?.GetComponent<TextMeshProUGUI>();
-            var knobGraphic = button != null ? FindField(button.GetType(), "mainGraphic")?.GetValue(button) as Graphic : null;
+            // The game's row uses a ColorButton (ToggleOption.SetText). Other button kinds (DefaultButton, SpriteButton...)
+            // each declare their own mainGraphic with no common base, so any other kind is read by name (reflection).
+            var knobGraphic = button is Pigeon.UI.ColorButton colorButton ? colorButton.mainGraphic
+                : button != null ? AccessTools.Field(button.GetType(), nameof(Pigeon.UI.ColorButton.mainGraphic))?.GetValue(button) as Graphic : null;
             var icon = go.transform.Find("Button/Icon")?.GetComponent<Image>();
             if (button == null || nameText == null || knobGraphic == null || icon == null)
             {
@@ -291,15 +347,15 @@ namespace MycopunkShared
                 UnityEngine.Object.DestroyImmediate(go);
                 return null;
             }
-            float thickness = 1.5f;
-            foreach (var c in go.GetComponents<Component>())
-                if (c != null && FindField(c.GetType(), "thickness")?.GetValue(c) is float t) { thickness = t; break; }
+            // Same as ToggleOption.SetText: the row's outline thickness, 1.5 without one.
+            float thickness = go.TryGetComponent<Pigeon.UI.OutlineGraphic>(out var outline) ? outline.thickness : 1.5f;
             var row = new ToggleRow { Go = go, Entry = item.Entry, Owner = item.Owner, Knob = knobGraphic.rectTransform, Icon = icon, Thickness = thickness, Name = nameText };
             AddLabel(row);
-            ReplaceEvent(button, "OnClickUp", () =>
+            ReplaceEvent(button, () =>
             {
                 try
                 {
+                    if (!Rebind(row)) return;
                     bool value = !(bool)row.Entry.BoxedValue;
                     row.Entry.BoxedValue = value; // BepInEx saves the cfg file
                     ShowToggle(row, value);
@@ -313,12 +369,12 @@ namespace MycopunkShared
         {
             var go = UnityEngine.Object.Instantiate(template, holder, false);
             go.name = "Mod " + item.Label;
-            foreach (var c in go.GetComponents<Component>())
-                if (c != null && c.GetType().Name == "ColorOption") UnityEngine.Object.DestroyImmediate(c);
+            foreach (var c in go.GetComponents<ColorOption>())
+                if (c != null) UnityEngine.Object.DestroyImmediate(c);
             var nameText = go.transform.Find("Name")?.GetComponent<TextMeshProUGUI>();
             var bar = go.GetComponentInChildren<ScrollBar>(true);
             var fill = bar != null ? bar.transform.Find("F")?.GetComponent<Graphic>() : null;
-            var onDrag = bar != null ? FindField(bar.GetType(), "OnDrag")?.GetValue(bar) as UnityEvent<Vector2> : null;
+            var onDrag = bar != null ? bar.OnDrag : null;
             if (nameText == null || bar == null || fill == null || onDrag == null)
             {
                 _log.LogWarning("MODS tab: the colour row layout is not as expected; skipping " + item.Label);
@@ -326,8 +382,8 @@ namespace MycopunkShared
                 return null;
             }
             // The fill follows the game's UI colour through CharacterGraphic; here it shows this entry's colour.
-            foreach (var c in fill.GetComponents<Component>())
-                if (c != null && c.GetType().Name == "CharacterGraphic") UnityEngine.Object.DestroyImmediate(c);
+            foreach (var c in fill.GetComponents<CharacterGraphic>())
+                if (c != null) UnityEngine.Object.DestroyImmediate(c);
             // The game's listener (ColorOption.SaveColorValue on the copy, now gone) is switched off; ours saves the entry.
             for (int i = 0; i < onDrag.GetPersistentEventCount(); i++)
                 onDrag.SetPersistentListenerState(i, UnityEventCallState.Off);
@@ -337,6 +393,7 @@ namespace MycopunkShared
             {
                 try
                 {
+                    if (!Rebind(row)) return;
                     var old = (Color)row.Entry.BoxedValue;
                     var color = Color.HSVToRGB(Mathf.Clamp01(v.x), Mathf.Clamp01(v.y), 1f);
                     color.a = old.a;
@@ -356,7 +413,7 @@ namespace MycopunkShared
         /// <summary>The row's name in the game's language, and the entry's description as the hover text.</summary>
         private static void AddLabel(Row row)
         {
-            if (HoverText != null && !string.IsNullOrEmpty(row.Entry.Description?.Description))
+            if (!string.IsNullOrEmpty(row.Entry.Description?.Description))
                 row.Hover = row.Go.AddComponent<Pigeon.HoverInfoText>();
             SetLabel(row);
         }
@@ -368,7 +425,7 @@ namespace MycopunkShared
             string label = ModsMenuTag.Find(row.Entry.Description?.Tags, language);
             row.Name.text = string.IsNullOrEmpty(label) ? row.Entry.Definition.Key : label;
             if (row.Hover != null)
-                HoverText.SetValue(row.Hover, ModsMenuTag.Description(row.Entry.Description.Tags, language, row.Entry.Description.Description));
+                row.Hover.text = ModsMenuTag.Description(row.Entry.Description.Tags, language, row.Entry.Description.Description);
         }
 
         // Same as ToggleOption.SetText: the knob sits at the right end (check mark) or the left end (cross).
@@ -378,8 +435,8 @@ namespace MycopunkShared
             if (parent == null) return;
             float x = parent.rect.width * 0.5f - row.Knob.rect.width * 0.5f - row.Thickness;
             row.Knob.anchoredPosition = new Vector2(on ? x : -x, row.Knob.anchoredPosition.y);
-            var global = AccessTools.Property(typeof(Global), "Instance")?.GetValue(null) ?? AccessTools.Field(typeof(Global), "Instance")?.GetValue(null);
-            var sprite = global != null ? AccessTools.Field(typeof(Global), on ? "CheckmarkIcon" : "CrossIcon")?.GetValue(global) as Sprite : null;
+            var global = Global.Instance;
+            var sprite = global != null ? (on ? global.CheckmarkIcon : global.CrossIcon) : null;
             if (sprite != null) row.Icon.sprite = sprite;
         }
 
@@ -391,23 +448,12 @@ namespace MycopunkShared
             row.Fill.color = new Color(color.r, color.g, color.b, 1f);
         }
 
-        private static FieldInfo FindField(Type type, string name)
+        // A new OnClickUp, so the copy drops the listeners it was cloned with (the game's SetSection / SaveValueToggle).
+        private static void ReplaceEvent(Pigeon.UI.Button target, Action action)
         {
-            for (var t = type; t != null && t != typeof(object); t = t.BaseType)
-            {
-                var f = t.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
-                if (f != null) return f;
-            }
-            return null;
-        }
-
-        private static void ReplaceEvent(Component target, string field, Action action)
-        {
-            var f = FindField(target.GetType(), field);
-            if (f == null || !typeof(UnityEvent).IsAssignableFrom(f.FieldType)) throw new MissingFieldException(target.GetType().Name, field);
             var ev = new UnityEvent();
             ev.AddListener(new UnityAction(action));
-            f.SetValue(target, ev);
+            target.OnClickUp = ev;
         }
     }
 }

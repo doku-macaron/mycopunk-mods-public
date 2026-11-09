@@ -4,19 +4,21 @@ using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using MycopunkShared;
+using Pigeon.Movement;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace MycopunkThrowPreview
 {
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
-    // Client-side and not a sandbox mod: it draws on the local HUD and only delays the local player's own throw.
+    [BepInDependency(MycopunkShared.MacaronCore.Guid, MycopunkShared.MacaronCore.Version)]
+    // Client-side and not a sandbox mod: it draws the local trajectory and only delays the local player's own throw.
     [MycoMod(null, ModFlags.IsClientSide)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "t4t5u0.mycopunk.throwpreview";
         public const string Name = "Mycopunk Throw Preview";
-        public const string Version = "0.2.1";
+        public const string Version = "0.3.0";
 
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> GrenadeAim;
@@ -30,6 +32,7 @@ namespace MycopunkThrowPreview
         private readonly ArcDrawer _drawer = new ArcDrawer();
         private readonly List<Vector3> _points = new List<Vector3>();
         private bool _failed;
+        private Harmony _harmony;
 
         private void Awake()
         {
@@ -42,37 +45,48 @@ namespace MycopunkThrowPreview
                 "Show the arc while charging a throw of a held object (a teammate's part, barrels...). Takes effect at once.",
                 null, MenuText.Label("throw.arc")));
             ArcColor = Config.Bind("Style", "Color", new Color(1f, 1f, 1f, 0.75f), new ConfigDescription(
-                "Arc colour (RRGGBBAA).", null, MenuText.Label("throw.color")));
+                "Arc color (RRGGBBAA).", null, MenuText.Label("throw.color")));
             ReviveColor = Config.Bind("Style", "ReviveColor", new Color(0.3f, 1f, 0.4f, 0.9f), new ConfigDescription(
-                "Arc colour when a thrown teammate's part would join another of their parts (which revives them). RRGGBBAA.",
+                "Arc color when a thrown teammate's part would join another of their parts (which revives them). RRGGBBAA.",
                 null, MenuText.Label("throw.revive_color")));
-            Thickness = Config.Bind("Style", "Thickness", 3f, "Arc thickness, in HUD units.");
-            DashLength = Config.Bind("Style", "DashLength", 12f, "Length of each dash of the arc, in HUD units.");
-            GapLength = Config.Bind("Style", "GapLength", 8f, "Gap between dashes, in HUD units (0 = a solid line).");
+            Thickness = Config.Bind("Style", "Thickness", 3f, "Arc thickness (1 unit = 0.01 meters).");
+            DashLength = Config.Bind("Style", "DashLength", 12f, "Dash length (1 unit = 0.05 meters).");
+            GapLength = Config.Bind("Style", "GapLength", 8f, "Gap length (1 unit = 0.05 meters; 0 = solid).");
 
             // Each part on its own, so one failing (game update) does not take the others down.
-            var harmony = new Harmony(Guid);
-            Try("grenade fire points", () => MycopunkThrowPreview.GrenadeAim.LoadOffsets(
+            _harmony = new Harmony(Guid);
+            ModSetup.Try(Log, "grenade fire points", () => MycopunkThrowPreview.GrenadeAim.LoadOffsets(
                 System.IO.Path.Combine(Paths.BepInExRootPath, "ThrowPreview", "fire-offsets.tsv")));
-            Try("grenade aiming", () => MycopunkThrowPreview.GrenadeAim.Install(harmony));
-            Try("held object arcs", () => HoldablePreview.Install(harmony));
-            Try("MODS tab", () => ModsMenu.Install(harmony, this));
-            Try("hotkey report", () => Hotkeys.ReportConflicts(this));
+            ModSetup.Try(Log, "grenade aiming", () => MycopunkThrowPreview.GrenadeAim.Install(_harmony));
+            ModSetup.Try(Log, "held object arcs", () => _harmony.CreateClassProcessor(typeof(HoldablePreview.StartThrowPatch)).Patch());
+            ModSetup.Try(Log, "MODS tab", () => ModsMenu.Install(_harmony, this));
+            ModSetup.Try(Log, "hotkey report", () => Hotkeys.ReportConflicts(this));
             Log.LogInfo(Name + " " + Version + " loaded (grenade aim=" + GrenadeAim.Value + ", object arcs=" + HoldableArc.Value + ").");
         }
 
-        private void OnEnable() => Canvas.willRenderCanvases += Redraw;
+        private void OnEnable()
+        {
+            Camera.onPreCull += Redraw;
+            RenderPipelineManager.beginCameraRendering += RedrawSrp;
+        }
 
-        private void OnDisable() => Canvas.willRenderCanvases -= Redraw;
+        private void OnDisable()
+        {
+            Camera.onPreCull -= Redraw;
+            RenderPipelineManager.beginCameraRendering -= RedrawSrp;
+            _drawer.Hide();
+        }
 
-        private void OnDestroy() => _drawer.Destroy();
+        private void OnDestroy()
+        {
+            MycopunkThrowPreview.GrenadeAim.Disable();
+            _harmony?.UnpatchSelf();
+            _drawer.Destroy();
+        }
 
         /// <summary>
-        /// Runs right before the UI is drawn, after every LateUpdate, so the camera and the player have moved for this
-        /// frame. Drawing in LateUpdate projected the arc with the camera of before its move, which left a trail
-        /// when jumping.
+        /// Throws on release; game state changes stay in the normal update.
         /// </summary>
-        /// <summary>Throws on release (game state changes stay in the normal update, not in the UI callback).</summary>
         private void Update()
         {
             if (_failed)
@@ -84,14 +98,17 @@ namespace MycopunkThrowPreview
             catch (System.Exception e)
             {
                 _failed = true;
+                MycopunkThrowPreview.GrenadeAim.Disable();
                 _drawer.Hide();
                 Log.LogError("Throw preview failed and is turned off: " + e);
             }
         }
 
-        private void Redraw()
+        private void RedrawSrp(ScriptableRenderContext context, Camera camera) => Redraw(camera);
+
+        private void Redraw(Camera camera)
         {
-            if (_failed)
+            if (_failed || camera != PlayerLook.LocalCamera)
                 return;
             try
             {
@@ -112,21 +129,11 @@ namespace MycopunkThrowPreview
             catch (System.Exception e)
             {
                 _failed = true;
+                MycopunkThrowPreview.GrenadeAim.Disable();
                 _drawer.Hide();
                 Log.LogError("Throw preview failed and is turned off: " + e);
             }
         }
 
-        private static void Try(string what, System.Action action)
-        {
-            try
-            {
-                action();
-            }
-            catch (System.Exception e)
-            {
-                Log.LogError("Could not set up " + what + "; it is off: " + e);
-            }
-        }
     }
 }

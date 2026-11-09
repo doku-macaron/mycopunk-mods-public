@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Reflection;
 using System.Text;
 using BepInEx;
 using HarmonyLib;
@@ -23,24 +22,23 @@ namespace MycopunkMissionLog
     {
         private const int Mates = 3;
 
-        // MissionPlayerData fields, in column order. FinalizeMissionData subtracts the start value of each from the
-        // PlayerData field of the same name (the last two have no PlayerData counterpart).
-        private static readonly string[] StatFields =
-        {
-            "enemiesKilled", "targetsKilled", "damageDealt", "damageTaken", "healingDealt", "friendlyFireDamageDealt",
-            "deaths", "playersRepaired", "resourcesCollected", "upgradesCollected",
-        };
         private static readonly string[] StatColumns =
         {
             "enemies_killed", "targets_killed", "damage_dealt", "damage_taken", "healing", "friendly_fire",
             "deaths", "repairs", "resources", "upgrades",
         };
 
-        private static readonly FieldInfo MissionDataField = AccessTools.Field(typeof(MissionManager), "missionData");
-        private static readonly FieldInfo PlayersField = AccessTools.Field(typeof(GameManager), "players");
-
         private static readonly FrameStats Frames = new FrameStats();
+        private sealed class PendingRow
+        {
+            public string Row;
+            public long Offset = -1;
+            public byte[] Bytes;
+        }
+        private static readonly Queue<PendingRow> Pending = new Queue<PendingRow>();
+        private static float _nextRetry;
         private static bool _active;
+        internal static bool Active => _active || Pending.Count != 0;
         private static string _outcome;
         private static DateTime _startLocal;
         private static float _startReal;
@@ -54,33 +52,67 @@ namespace MycopunkMissionLog
             Directory.CreateDirectory(dir);
             FilePath = Path.Combine(dir, "missions-v1.tsv");
 
-            Patch(harmony, typeof(MissionManager), "OnMissionStarted_Client", postfix: nameof(OnStarted));
-            Patch(harmony, typeof(PlayerData), "OnMissionCompleted", prefix: nameof(OnCompleted));
-            Patch(harmony, typeof(PlayerData), "OnMissionFailed", prefix: nameof(OnFailed));
-            Patch(harmony, typeof(MissionManager), "FinalizeMissionData", postfix: nameof(OnFinalized));
-            // First, so DPS Checker (which clears its numbers in its own OnDestroy prefix) has not reset yet.
-            Patch(harmony, typeof(MissionManager), "OnDestroy", prefix: nameof(OnDestroyed), priority: Priority.First);
+            Patch(harmony, typeof(StartedPatch), nameof(MissionManager), nameof(MissionManager.OnMissionStarted_Client));
+            Patch(harmony, typeof(CompletedPatch), nameof(PlayerData), nameof(PlayerData.OnMissionCompleted));
+            Patch(harmony, typeof(FailedPatch), nameof(PlayerData), nameof(PlayerData.OnMissionFailed));
+            Patch(harmony, typeof(FinalizedPatch), nameof(MissionManager), nameof(MissionManager.FinalizeMissionData));
+            Patch(harmony, typeof(DestroyedPatch), nameof(MissionManager), nameof(MissionManager.OnDestroy));
         }
 
-        private static void Patch(Harmony harmony, Type type, string method, string prefix = null, string postfix = null, int priority = Priority.Normal)
+        // One patch class at a time, so one that fails does not stop the others.
+        private static void Patch(Harmony harmony, Type patch, string type, string method)
         {
             try
             {
-                var target = AccessTools.Method(type, method);
-                if (target == null) { Plugin.Log.LogWarning(type.Name + "." + method + " not found; the mission log may miss rows."); return; }
-                harmony.Patch(target,
-                    prefix: prefix != null ? new HarmonyMethod(typeof(MissionRecorder), prefix) { priority = priority } : null,
-                    postfix: postfix != null ? new HarmonyMethod(typeof(MissionRecorder), postfix) { priority = priority } : null);
+                harmony.CreateClassProcessor(patch).Patch();
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning("Could not hook " + type.Name + "." + method + ": " + e.Message);
+                Plugin.Log.LogWarning("Could not hook " + type + "." + method + ": " + e.Message);
             }
+        }
+
+        [HarmonyPatch(typeof(MissionManager), nameof(MissionManager.OnMissionStarted_Client))]
+        private static class StartedPatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(MissionManager __instance) => OnStarted(__instance);
+        }
+
+        [HarmonyPatch(typeof(PlayerData), nameof(PlayerData.OnMissionCompleted))]
+        private static class CompletedPatch
+        {
+            [HarmonyPrefix]
+            private static void Prefix() => OnCompleted();
+        }
+
+        [HarmonyPatch(typeof(PlayerData), nameof(PlayerData.OnMissionFailed))]
+        private static class FailedPatch
+        {
+            [HarmonyPrefix]
+            private static void Prefix() => OnFailed();
+        }
+
+        [HarmonyPatch(typeof(MissionManager), nameof(MissionManager.FinalizeMissionData))]
+        private static class FinalizedPatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(MissionManager __instance) => OnFinalized(__instance);
+        }
+
+        // First, so DPS Checker (which clears its numbers in its own OnDestroy prefix) has not reset yet.
+        [HarmonyPatch(typeof(MissionManager), nameof(MissionManager.OnDestroy))]
+        private static class DestroyedPatch
+        {
+            [HarmonyPrefix]
+            [HarmonyPriority(Priority.First)]
+            private static void Prefix(MissionManager __instance) => OnDestroyed(__instance);
         }
 
         public static void Tick()
         {
             if (_active) Frames.Add(Time.unscaledDeltaTime * 1000f);
+            if (Pending.Count != 0 && Time.unscaledTime >= _nextRetry) FlushPending();
         }
 
         private static void OnStarted(MissionManager __instance)
@@ -115,19 +147,50 @@ namespace MycopunkMissionLog
             _active = false;
             try
             {
-                string row = BuildRow(manager, outcome, finalized);
-                bool header = !File.Exists(FilePath);
-                using (var w = new StreamWriter(FilePath, append: true, encoding: new UTF8Encoding(false)))
-                {
-                    w.NewLine = "\n";
-                    if (header) w.WriteLine(Header());
-                    w.WriteLine(row);
-                }
-                Plugin.Log.LogInfo("Mission logged (" + outcome + ", " + Frames.Frames + " frames).");
+                Pending.Enqueue(new PendingRow { Row = BuildRow(manager, outcome, finalized) });
+                FlushPending();
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning("Mission log row failed: " + e);
+                Plugin.Log.LogWarning("Mission log row could not be prepared: " + e);
+            }
+        }
+
+        internal static void FlushPending()
+        {
+            _nextRetry = Time.unscaledTime + 5f;
+            while (Pending.Count != 0)
+            {
+                var pending = Pending.Peek();
+                try
+                {
+                    using (var stream = new FileStream(FilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read))
+                    {
+                        if (pending.Offset < 0)
+                        {
+                            pending.Offset = stream.Length;
+                            pending.Bytes = new UTF8Encoding(false).GetBytes((pending.Offset == 0 ? Header() + "\n" : "") + pending.Row + "\n");
+                        }
+                        if (stream.Length < pending.Offset) throw new IOException("Mission log was shortened while a row was pending.");
+                        stream.Position = pending.Offset;
+                        int existing = (int)Math.Min(stream.Length - pending.Offset, pending.Bytes.Length);
+                        for (int i = 0; i < existing; i++)
+                            if (stream.ReadByte() != pending.Bytes[i]) throw new IOException("Mission log changed while a row was pending.");
+                        if (existing < pending.Bytes.Length)
+                        {
+                            stream.Position = pending.Offset + existing;
+                            stream.Write(pending.Bytes, existing, pending.Bytes.Length - existing);
+                            stream.Flush();
+                        }
+                    }
+                    Pending.Dequeue();
+                    Plugin.Log.LogInfo("Mission log row saved.");
+                }
+                catch (Exception e)
+                {
+                    Plugin.Log.LogWarning("Mission log row pending; retrying: " + e.Message);
+                    break;
+                }
             }
         }
 
@@ -219,28 +282,26 @@ namespace MycopunkMissionLog
         // the values noted at the start, so do the same subtraction from PlayerData here, without touching it.
         private static void AddStats(List<string> c, MissionManager manager, bool finalized)
         {
-            object data = null;
-            try { data = MissionDataField != null ? MissionDataField.GetValue(manager) : null; } catch { }
+            MissionManager.MissionPlayerData data = manager.missionData;
             PlayerData pd = null;
             try { pd = PlayerData.Instance; } catch { }
-            foreach (var name in StatFields)
+            // In column order. FinalizeMissionData subtracts the start value of each from the PlayerData field of the
+            // same name (the last two have no PlayerData counterpart).
+            double[] values =
+            {
+                data.enemiesKilled, data.targetsKilled, data.damageDealt, data.damageTaken, data.healingDealt,
+                data.friendlyFireDamageDealt, data.deaths, data.playersRepaired, data.resourcesCollected, data.upgradesCollected,
+            };
+            double?[] totals = pd == null ? null : new double?[]
+            {
+                pd.enemiesKilled, pd.targetsKilled, pd.damageDealt, pd.damageTaken, pd.healingDealt,
+                pd.friendlyFireDamageDealt, pd.deaths, pd.playersRepaired, null, null,
+            };
+            for (int i = 0; i < values.Length; i++)
             {
                 string text = "";
-                try
-                {
-                    var f = data != null ? data.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) : null;
-                    if (f != null)
-                    {
-                        double value = Convert.ToDouble(f.GetValue(data), CultureInfo.InvariantCulture);
-                        if (finalized) text = Num(value, "0.##");
-                        else
-                        {
-                            var g = pd != null ? AccessTools.Field(typeof(PlayerData), name) : null;
-                            if (g != null) text = Num(Convert.ToDouble(g.GetValue(pd), CultureInfo.InvariantCulture) - value, "0.##");
-                        }
-                    }
-                }
-                catch { }
+                if (finalized) text = Num(values[i], "0.##");
+                else if (totals != null && totals[i].HasValue) text = Num(totals[i].Value - values[i], "0.##");
                 c.Add(text);
             }
         }
@@ -262,9 +323,9 @@ namespace MycopunkMissionLog
             var result = new List<Player>();
             try
             {
-                if (PlayersField != null && PlayersField.GetValue(null) is System.Collections.IEnumerable list)
-                    foreach (var o in list)
-                        if (o is Player p && p != null) result.Add(p);
+                if (GameManager.players != null)
+                    foreach (var p in GameManager.players)
+                        if (p != null) result.Add(p);
             }
             catch { }
             return result;

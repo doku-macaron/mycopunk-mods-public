@@ -6,13 +6,13 @@
   </PropertyGroup>
 
   <Target Name="CollectPlugin" AfterTargets="Build">
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(MSBuildThisFileDirectory)output" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(MSBuildThisFileDirectory)output" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(DeployToGame)' == 'true' And Exists('$(GamePath)\BepInEx')">
     <MakeDir Directories="$(PluginDeployDir)" />
-    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(PluginDeployDir)" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginDeployDir)" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(PluginDeployDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginDeployDir)" SkipUnchangedFiles="true" />
     <Message Importance="high" Text="Deployed to $(PluginDeployDir)" />
   </Target>
 

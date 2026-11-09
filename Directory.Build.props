@@ -10,6 +10,7 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
+    <RestoreAdditionalProjectSources>https://api.nuget.org/v3/index.json;https://nuget.bepinex.dev/v3/index.json</RestoreAdditionalProjectSources>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
@@ -24,10 +25,17 @@
     <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
   </PropertyGroup>
 
+  <!-- Publicizer for Assembly-CSharp, and BepInEx's analyzers (they flag Harmony patch mistakes at build time). -->
+  <ItemGroup>
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
+    <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="BepInEx" HintPath="$(BepInExCore)\BepInEx.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(BepInExCore)\0Harmony.dll" Private="false" />
-    <Reference Include="Assembly-CSharp" HintPath="$(ManagedDir)\Assembly-CSharp.dll" Private="false" />
+    <!-- Publicized (as the Mycopunk modding wiki and template do): private game members are used directly, not by reflection. -->
+    <Reference Include="Assembly-CSharp" HintPath="$(ManagedDir)\Assembly-CSharp.dll" Private="false" Publicize="true" />
     <Reference Include="UnityEngine" HintPath="$(ManagedDir)\UnityEngine.dll" Private="false" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(ManagedDir)\UnityEngine.CoreModule.dll" Private="false" />
     <Reference Include="Unity.InputSystem" HintPath="$(ManagedDir)\Unity.InputSystem.dll" Private="false" />
@@ -41,7 +49,7 @@
   <!--
     The shared code (shared/, namespace MycopunkShared) is its own plugin, Macaron Core
     (mods/macaron-core). Every mod references it (not copied next to the mod) and declares
-    [BepInDependency(MycopunkShared.MacaronCore.Guid)]. A project opts out with <NoMacaronCore>true</NoMacaronCore>.
+    [BepInDependency(MycopunkShared.MacaronCore.Guid, MycopunkShared.MacaronCore.Version)]. A project opts out with <NoMacaronCore>true</NoMacaronCore>.
     shared/Hud and shared/Menu need TextMeshPro and UnityEngine.UI: <UseSharedHud> / <UseSharedMenu> still add those
     references for mods that use the HUD lines or TMP themselves.
   -->

@@ -24,10 +24,11 @@ namespace MycopunkHealthNumbers
     {
         public static Func<bool> Enabled = () => false;
 
-        private static FieldInfo _damage, _effect, _effectAmount, _flags, _guard, _beforeTakeDamage;
+        // Reflection: OnBeforeTakeDamage is an event, and C# only allows += / -= on it from outside Player, so its
+        // backing delegate field (same name) is read this way.
+        private static readonly FieldInfo BeforeTakeDamage = AccessTools.Field(typeof(Player), nameof(Player.OnBeforeTakeDamage));
         private static string _lastHandlers;
         private const int IgnoresGuardFlags = 32 | 512; // DamageData.IgnoreDeathProtection: Overclocked | IgnoreDeathProtection
-        private static MethodInfo _isDot;
 
         // Set while ApplyDamage_Owner runs for the local player; SetHealth_Owner records the new health here.
         private static bool _inDamage;
@@ -39,34 +40,8 @@ namespace MycopunkHealthNumbers
         {
             try
             {
-                MethodInfo apply = AccessTools.Method(typeof(Player), "ApplyDamage_Owner");
-                MethodInfo setHealth = AccessTools.Method(typeof(Player), "SetHealth_Owner");
-                if (apply == null || setHealth == null)
-                {
-                    Plugin.Log.LogWarning("Player.ApplyDamage_Owner or SetHealth_Owner was not found; the damage log is off.");
-                    return;
-                }
-                Type dd = apply.GetParameters()[0].ParameterType;
-                _damage = AccessTools.Field(dd, "damage");
-                _effect = AccessTools.Field(dd, "effect");
-                _effectAmount = AccessTools.Field(dd, "effectAmount");
-                _flags = AccessTools.Field(dd, "damageFlags");
-                _isDot = AccessTools.PropertyGetter(dd, "IsDOT");
-
-                harmony.Patch(apply,
-                    prefix: new HarmonyMethod(typeof(DamageLog), nameof(ApplyPrefix)),
-                    finalizer: new HarmonyMethod(typeof(DamageLog), nameof(ApplyFinalizer)));
-                harmony.Patch(setHealth, prefix: new HarmonyMethod(typeof(DamageLog), nameof(SetHealthPrefix)));
-
-                _guard = AccessTools.Field(typeof(Player), "hasDeathProtection");
-                _beforeTakeDamage = AccessTools.Field(typeof(Player), "OnBeforeTakeDamage");
-                MethodInfo heal = AccessTools.Method(typeof(Player), "ApplyHeal_Owner");
-                if (heal != null && _guard != null)
-                    harmony.Patch(heal,
-                        prefix: new HarmonyMethod(typeof(DamageLog), nameof(HealPrefix)),
-                        postfix: new HarmonyMethod(typeof(DamageLog), nameof(HealPostfix)));
-                else
-                    Plugin.Log.LogWarning("Player.hasDeathProtection or ApplyHeal_Owner was not found; the damage log does not follow the one-hit guard.");
+                // Together: if one fails, the others are taken back, so the log is never half hooked.
+                MycopunkShared.ModSetup.PatchTogether(harmony, typeof(ApplyDamagePatch), typeof(SetHealthPatch), typeof(HealPatch));
             }
             catch (Exception e)
             {
@@ -74,37 +49,90 @@ namespace MycopunkHealthNumbers
             }
         }
 
-        private static void ApplyPrefix(Player __instance, object[] __args, out float __state)
+        [HarmonyPatch(typeof(Player), nameof(Player.ApplyDamage_Owner))]
+        private static class ApplyDamagePatch
         {
-            __state = float.NaN;
-            if (!Enabled() || !ReferenceEquals(__instance, Player.LocalPlayer) || !__instance.IsAlive)
-                return;
-            __state = __instance.Health;
-            _inDamage = true;
-            _healthSet = false;
-            _guardBefore = Guard(__instance);
-            LogHandlers(__instance);
+            [HarmonyPrefix]
+            // ref only so the analyzer does not read the field accesses as writes; the hit is not changed.
+            private static void Prefix(Player __instance, ref DamageData data, IDamageSource source, out float __state)
+            {
+                __state = float.NaN;
+                if (!Enabled() || !ReferenceEquals(__instance, Player.LocalPlayer) || !__instance.IsAlive)
+                    return;
+                __state = __instance.Health;
+                _inDamage = true;
+                _healthSet = false;
+                _guardBefore = Guard(__instance);
+                LogHandlers(__instance);
 
-            object data = __args[0];
-            object source = __args.Length > 1 ? __args[1] : null;
-            object flags = _flags?.GetValue(data);
-            bool ignoresGuard = flags != null && (Convert.ToInt32(flags, CultureInfo.InvariantCulture) & IgnoresGuardFlags) != 0;
-            Plugin.Log.LogInfo(
-                $"[damage] t={Time.time:0.00} raw={F(_damage?.GetValue(data))} " +
-                $"effect={_effect?.GetValue(data)} effectAmount={F(_effectAmount?.GetValue(data))} " +
-                $"dot={_isDot?.Invoke(data, null)} flags={flags} " +
-                $"source={DescribeSource(source)} hp={F(__state)}/{F(__instance.MaxHealth)} " +
-                $"guard={(_guard == null ? "?" : _guardBefore ? "on" : "off")}{(ignoresGuard ? " (this hit ignores the guard)" : "")}");
+                DamageFlags flags = data.damageFlags;
+                bool ignoresGuard = ((int)flags & IgnoresGuardFlags) != 0;
+                Plugin.Log.LogInfo(
+                    $"[damage] t={Time.time:0.00} raw={F(data.damage)} " +
+                    $"effect={data.effect} effectAmount={F(data.effectAmount)} " +
+                    $"dot={data.IsDOT} flags={flags} " +
+                    $"source={DescribeSource(source)} hp={F(__state)}/{F(__instance.MaxHealth)} " +
+                    $"guard={(_guardBefore ? "on" : "off")}{(ignoresGuard ? " (this hit ignores the guard)" : "")}");
+            }
+
+            [HarmonyFinalizer]
+            private static void Finalizer(Player __instance, float __state)
+            {
+                if (float.IsNaN(__state))
+                    return;
+                _inDamage = false;
+                bool guardAfter = Guard(__instance);
+                string guard = $" guard {(_guardBefore ? "on" : "off")} -> {(guardAfter ? "on" : "off")}";
+                if (_healthSet)
+                    Plugin.Log.LogInfo($"[damage]   lost={F(__state - _newHealth)} hp {F(__state)} -> {F(_newHealth)}{guard}");
+                else
+                    Plugin.Log.LogInfo("[damage]   no health change (blocked, mitigated or deferred)" + guard);
+                if (_guardBefore && !guardAfter)
+                    Plugin.Log.LogInfo($"[guard] t={Time.time:0.00} used: the hit left {F(_newHealth)}");
+                if (_healthSet && _newHealth <= 0f)
+                    Plugin.Log.LogInfo($"[guard] t={Time.time:0.00} killed (guard was {(_guardBefore ? "on" : "off")} before the hit)");
+            }
         }
 
-        private static bool Guard(Player p) => _guard != null && (bool)_guard.GetValue(p);
+        [HarmonyPatch(typeof(Player), nameof(Player.SetHealth_Owner))]
+        private static class SetHealthPatch
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Player __instance, float value)
+            {
+                if (_inDamage && ReferenceEquals(__instance, Player.LocalPlayer))
+                {
+                    _newHealth = value;
+                    _healthSet = true;
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.ApplyHeal_Owner))]
+        private static class HealPatch
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Player __instance, out bool __state) =>
+                __state = Enabled() && ReferenceEquals(__instance, Player.LocalPlayer) && Guard(__instance);
+
+            [HarmonyPostfix]
+            private static void Postfix(Player __instance, bool __state)
+            {
+                if (!Enabled() || !ReferenceEquals(__instance, Player.LocalPlayer))
+                    return;
+                if (!__state && Guard(__instance))
+                    Plugin.Log.LogInfo($"[guard] t={Time.time:0.00} back on (health {F(__instance.Health)}/{F(__instance.MaxHealth)})");
+            }
+        }
+
+        private static bool Guard(Player p) => p.hasDeathProtection;
 
         /// <summary>The handlers on Player.OnBeforeTakeDamage (mission modifiers, upgrades), when they change.</summary>
         private static void LogHandlers(Player p)
         {
-            if (_beforeTakeDamage == null)
+            if (BeforeTakeDamage == null)
                 return;
-            var d = _beforeTakeDamage.GetValue(p) as Delegate;
+            var d = BeforeTakeDamage.GetValue(p) as Delegate;
             string list = "none";
             if (d != null)
             {
@@ -119,44 +147,7 @@ namespace MycopunkHealthNumbers
             Plugin.Log.LogInfo("[damage] OnBeforeTakeDamage handlers: " + list);
         }
 
-        private static void HealPrefix(Player __instance, out bool __state) =>
-            __state = Enabled() && ReferenceEquals(__instance, Player.LocalPlayer) && Guard(__instance);
-
-        private static void HealPostfix(Player __instance, bool __state)
-        {
-            if (!Enabled() || !ReferenceEquals(__instance, Player.LocalPlayer))
-                return;
-            if (!__state && Guard(__instance))
-                Plugin.Log.LogInfo($"[guard] t={Time.time:0.00} back on (health {F(__instance.Health)}/{F(__instance.MaxHealth)})");
-        }
-
-        private static void SetHealthPrefix(Player __instance, float __0)
-        {
-            if (_inDamage && ReferenceEquals(__instance, Player.LocalPlayer))
-            {
-                _newHealth = __0;
-                _healthSet = true;
-            }
-        }
-
-        private static void ApplyFinalizer(Player __instance, float __state)
-        {
-            if (float.IsNaN(__state))
-                return;
-            _inDamage = false;
-            bool guardAfter = Guard(__instance);
-            string guard = _guard == null ? "" : $" guard {(_guardBefore ? "on" : "off")} -> {(guardAfter ? "on" : "off")}";
-            if (_healthSet)
-                Plugin.Log.LogInfo($"[damage]   lost={F(__state - _newHealth)} hp {F(__state)} -> {F(_newHealth)}{guard}");
-            else
-                Plugin.Log.LogInfo("[damage]   no health change (blocked, mitigated or deferred)" + guard);
-            if (_guardBefore && !guardAfter)
-                Plugin.Log.LogInfo($"[guard] t={Time.time:0.00} used: the hit left {F(_newHealth)}");
-            if (_healthSet && _newHealth <= 0f)
-                Plugin.Log.LogInfo($"[guard] t={Time.time:0.00} killed (guard was {(_guardBefore ? "on" : "off")} before the hit)");
-        }
-
-        private static string DescribeSource(object source)
+        private static string DescribeSource(IDamageSource source)
         {
             if (source == null)
                 return "null";
@@ -165,9 +156,7 @@ namespace MycopunkHealthNumbers
                 s += $"({c.gameObject.name})";
             try
             {
-                MethodInfo getBase = source.GetType().GetMethod("GetBase", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                                     ?? FindInterfaceMethod(source.GetType(), "GetBase");
-                object b = getBase?.Invoke(source, null);
+                IDamageSource b = source.GetBase();
                 if (b != null && !ReferenceEquals(b, source))
                     s += " base=" + b.GetType().Name;
             }
@@ -176,17 +165,6 @@ namespace MycopunkHealthNumbers
                 // Best effort only.
             }
             return s;
-        }
-
-        private static MethodInfo FindInterfaceMethod(Type t, string name)
-        {
-            foreach (Type i in t.GetInterfaces())
-            {
-                MethodInfo m = i.GetMethod(name, Type.EmptyTypes);
-                if (m != null)
-                    return m;
-            }
-            return null;
         }
 
         private static string F(object v) =>

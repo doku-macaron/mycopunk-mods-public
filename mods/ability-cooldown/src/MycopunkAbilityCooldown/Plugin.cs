@@ -7,20 +7,22 @@ using MycopunkShared;
 namespace MycopunkAbilityCooldown
 {
     [BepInPlugin(Guid, Name, Version)]
-    [BepInDependency(MycopunkShared.MacaronCore.Guid)]
+    [BepInDependency(MycopunkShared.MacaronCore.Guid, MycopunkShared.MacaronCore.Version)]
     // Client-side and not a sandbox mod: it only adds text to the local HUD.
     [MycoMod(null, ModFlags.IsClientSide)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "t4t5u0.mycopunk.abilitycooldown";
         public const string Name = "Mycopunk Ability Cooldown";
-        public const string Version = "0.2.1";
+        public const string Version = "0.2.2";
 
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<float> FontSize;
         internal static ConfigEntry<float> ShadeAlpha;
         internal static ConfigEntry<float> SmallFontSize;
+
+        private Harmony _harmony;
 
         private void Awake()
         {
@@ -36,23 +38,17 @@ namespace MycopunkAbilityCooldown
                 "Font size of the corner tags (the charge count, and the seconds while charges are left), in HUD units.");
 
             // Each part on its own, so one failing (game update) does not take the others down.
-            var harmony = new Harmony(Guid);
-            Try("cooldown labels", () => CooldownLabel.Install(harmony));
-            Try("MODS tab", () => ModsMenu.Install(harmony, this));
-            Try("hotkey report", () => Hotkeys.ReportConflicts(this));
+            _harmony = new Harmony(Guid);
+            ModSetup.Try(Log, "cooldown labels", () =>
+            {
+                _harmony.CreateClassProcessor(typeof(CooldownLabel.SetupPatch)).Patch();
+                CooldownLabel.AttachExisting();
+            });
+            ModSetup.Try(Log, "MODS tab", () => ModsMenu.Install(_harmony, this));
+            ModSetup.Try(Log, "hotkey report", () => Hotkeys.ReportConflicts(this));
             Log.LogInfo(Name + " " + Version + " loaded (enabled=" + Enabled.Value + ").");
         }
 
-        private static void Try(string what, System.Action action)
-        {
-            try
-            {
-                action();
-            }
-            catch (System.Exception e)
-            {
-                Log.LogError("Could not set up " + what + "; it is off: " + e);
-            }
-        }
+        private void OnDestroy() => _harmony?.UnpatchSelf();
     }
 }

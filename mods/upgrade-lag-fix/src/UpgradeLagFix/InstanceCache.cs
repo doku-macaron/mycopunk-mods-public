@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using HarmonyLib;
 
 namespace UpgradeLagFix
 {
@@ -27,9 +26,6 @@ namespace UpgradeLagFix
             public int InfoIndex;
             public int InstanceIndex;
         }
-
-        private static readonly AccessTools.FieldRef<PlayerData, Dictionary<int, List<UpgradeInfo>>> DataRef =
-            AccessTools.FieldRefAccess<PlayerData, Dictionary<int, List<UpgradeInfo>>>("data");
 
         private static readonly Dictionary<int, Entry> Map = new Dictionary<int, Entry>(4096);
         private static readonly HashSet<int> Duplicates = new HashSet<int>();
@@ -59,7 +55,7 @@ namespace UpgradeLagFix
             result = null;
             var pd = PlayerData.Instance;
             if (pd == null) return false;
-            var data = DataRef(pd);
+            var data = pd.data;
             if (data == null) return false;
             if (!ReferenceEquals(pd, _ownerPlayerData) || !ReferenceEquals(data, _ownerData))
             {
@@ -131,7 +127,7 @@ namespace UpgradeLagFix
         {
             var pd = PlayerData.Instance;
             if (pd == null) return;
-            var data = DataRef(pd);
+            var data = pd.data;
             Map.Clear();
             Duplicates.Clear();
             Bypass.Clear();

@@ -5,7 +5,7 @@
   <PropertyGroup>
     <AssemblyName>MacaronCore</AssemblyName>
     <RootNamespace>MycopunkShared</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <IsMacaronCore>true</IsMacaronCore>
     <!-- TextMeshPro and UnityEngine.UI for shared/Hud and shared/Menu. -->
     <UseSharedHud>true</UseSharedHud>
@@ -13,7 +13,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="$(RepoRoot)shared\**\*.cs" Link="shared\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="$(RepoRoot)shared\**\*.cs" Exclude="$(RepoRoot)shared\tests\**\*;$(RepoRoot)shared\**\obj\**\*;$(RepoRoot)shared\**\bin\**\*" Link="shared\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
+
+  <Target Name="GenerateMacaronCoreVersion" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <MacaronCoreVersionFile>$(IntermediateOutputPath)MacaronCoreVersion.g.cs</MacaronCoreVersionFile>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(MacaronCoreVersionFile)" Lines="namespace MycopunkShared { public static partial class MacaronCore { public const string Version = &quot;$(Version)&quot;%3B } }" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(MacaronCoreVersionFile)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

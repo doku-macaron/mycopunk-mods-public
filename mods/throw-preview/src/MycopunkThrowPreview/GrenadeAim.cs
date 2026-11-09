@@ -36,14 +36,10 @@ namespace MycopunkThrowPreview
         private const int MaxSteps = 600;
         private const float DefaultLifetime = 10f;
 
-        private static readonly AccessTools.FieldRef<Throwable, GunData> GunDataRef =
-            AccessTools.FieldRefAccess<Throwable, GunData>("gunData");
-        private static readonly AccessTools.FieldRef<Throwable, FireData> FireDataRef =
-            AccessTools.FieldRefAccess<Throwable, FireData>("fireData");
-
         private static InputAction _throwAction;
         private static Player _aiming;
         private static bool _releasing;
+        private static bool _available; // all four patches applied
         // Where the grenade leaves from, in camera space. Per kind of grenade, since each model has its own fire point
         // (measured: 1.2 m off for acid and 1.6 m for voltaic when the photon disc's was used). Before a grenade's
         // first throw, a fixed guess (another kind's offset was worse: it is not the same model).
@@ -63,115 +59,138 @@ namespace MycopunkThrowPreview
         private static bool _predictedLearned;
         private static string _lastEnd = "";
 
-        // The Lifetime property, called virtually: some bullets override it (IncendiaryGrenadeBullet: 1.5 s as a
-        // cluster bomb), so the base field alone is not always what the bullet uses.
-        private static readonly System.Reflection.MethodInfo LifetimeGetter =
-            AccessTools.PropertyGetter(typeof(SimpleProjectileBullet), "Lifetime");
-
-        private static float Lifetime(SimpleProjectileBullet bullet) =>
-            LifetimeGetter != null ? (float)LifetimeGetter.Invoke(bullet, null) : 0f;
-        private static readonly AccessTools.FieldRef<Player, LayerMask> GroundMask =
-            AccessTools.FieldRefAccess<Player, LayerMask>("groundLayerMask");
+        // The Lifetime property, virtual: some bullets override it (IncendiaryGrenadeBullet: 1.5 s as a cluster
+        // bomb), so the base field alone is not always what the bullet uses.
+        private static float Lifetime(SimpleProjectileBullet bullet) => bullet.Lifetime;
 
         internal static bool Aiming => _aiming != null;
 
+        /// <summary>
+        /// Applies the four patches together. If one fails, the ones already applied are taken back, so a grenade is
+        /// never held back without the rest of the aiming.
+        /// </summary>
         public static void Install(Harmony harmony)
         {
-            var pressed = AccessTools.Method(typeof(Player), "OnThrowPressed");
-            var tryThrow = AccessTools.Method(typeof(Player), nameof(Player.TryThrow));
-            var fireBullet = AccessTools.Method(typeof(Throwable), "FireBullet");
-            var init = AccessTools.Method(typeof(SimpleProjectileBullet), nameof(SimpleProjectileBullet.Initialize));
-            if (pressed == null || tryThrow == null || fireBullet == null || init == null)
-            {
-                Plugin.Log.LogWarning("Player.OnThrowPressed / TryThrow or Throwable.FireBullet not found; grenade aiming is off.");
-                return;
-            }
-            harmony.Patch(pressed, prefix: new HarmonyMethod(typeof(GrenadeAim), nameof(OnThrowPressed_Prefix)));
-            harmony.Patch(tryThrow, prefix: new HarmonyMethod(typeof(GrenadeAim), nameof(TryThrow_Prefix)));
-            harmony.Patch(fireBullet, postfix: new HarmonyMethod(typeof(GrenadeAim), nameof(FireBullet_Postfix)));
-            harmony.Patch(init, postfix: new HarmonyMethod(typeof(GrenadeAim), nameof(BulletInitialize_Postfix)));
-        }
-
-        /// <summary>Keeps the real grenade bullet's data, and logs it next to the last prediction.</summary>
-        private static void BulletInitialize_Postfix(SimpleProjectileBullet __instance, BulletData data, IDamageSource source, BulletFlags flags)
-        {
             try
             {
-                if (!(__instance is GrenadeBullet) || !flags.IsOwner() || !(source is GrenadeGear grenade))
-                    return;
-                float life = Lifetime(__instance);
-                var info = ((IUpgradable)grenade).Info;
-                if (info == null)
-                    return;
-                LearnedData[info] = new Learned { Data = data, Lifetime = life > 0f ? life : DefaultLifetime };
-                if (_predicted is BulletData p)
+                MycopunkShared.ModSetup.PatchTogether(harmony,
+                    typeof(OnThrowPressedPatch), typeof(TryThrowPatch), typeof(FireBulletPatch), typeof(BulletInitializePatch));
+                _available = true;
+            }
+            catch (System.Exception e)
+            {
+                Disable();
+                Plugin.Log.LogWarning("Grenade aiming unavailable: " + e);
+            }
+        }
+
+        /// <summary>Stops holding grenades back (the throw preview failed or is unloading).</summary>
+        internal static void Disable() { _available = false; _aiming = null; }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.OnThrowPressed))]
+        internal static class OnThrowPressedPatch
+        {
+            [HarmonyPrefix]
+            private static void Prefix(InputAction.CallbackContext context)
+            {
+                var read = context; // a local copy: reading the struct parameter's members directly trips Harmony003
+                _throwAction = read.action;
+            }
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.TryThrow))]
+        internal static class TryThrowPatch
+        {
+            [HarmonyPrefix]
+            private static bool Prefix(Player __instance)
+            {
+                try
                 {
-                    Plugin.Log.LogInfo("grenade thrown (" + __instance.GetType().Name + ", lifetime " + life.ToString("F1") + " s, prediction from " +
-                        (_predictedLearned ? "its last throw" : "GunData") + "). predicted vs real: " +
-                        "pos " + p.position.ToString("F2") + " / " + data.position.ToString("F2") +
-                        ", dir " + p.direction.ToString("F3") + " / " + data.direction.ToString("F3") +
-                        ", speed " + p.speed.ToString("F1") + " / " + data.speed.ToString("F1") +
-                        ", gravity " + p.gravity.ToString("F2") + " / " + data.gravity.ToString("F2") +
-                        ", bounces " + p.maxBounces + " / " + data.maxBounces +
-                        ", surface mask " + p.surfaceCollisionMask + " / " + data.surfaceCollisionMask +
-                        ", target mask " + p.targetCollisionMask + " / " + data.targetCollisionMask +
-                        ", range " + p.range.maxDamageRange.ToString("F0") + " / " + data.range.maxDamageRange.ToString("F0") +
-                        " | arc: " + _lastEnd);
-                    _predicted = null;
+                    if (!_available || _releasing || !Plugin.GrenadeAim.Value || __instance != Player.LocalPlayer)
+                        return true;
+                    var grenade = Grenade(__instance);
+                    if (grenade == null || grenade.Active || ((IActivatedAbility)grenade).Charge < 1f)
+                        return true; // not ours to hold back; the game plays its own error when uncharged
+                    if (_throwAction == null || !_throwAction.IsPressed())
+                        return true; // released already (a tap): throw now
+                    _aiming = __instance;
+                    return false;
+                }
+                catch (System.Exception e)
+                {
+                    Plugin.Log.LogWarning("Grenade aiming failed; throwing normally: " + e);
+                    _aiming = null;
+                    return true;
                 }
             }
-            catch (System.Exception e)
+        }
+
+        [HarmonyPatch(typeof(Throwable), nameof(Throwable.FireBullet))]
+        internal static class FireBulletPatch
+        {
+            /// <summary>Remembers where the grenade leaves from, relative to the camera, for the next arc.</summary>
+            [HarmonyPostfix]
+            private static void Postfix(Throwable __instance)
             {
-                Plugin.Log.LogWarning("Could not read the thrown grenade: " + e);
+                if (!(__instance is GrenadeGear) || __instance.Player != Player.LocalPlayer)
+                    return;
+                var fd = __instance.fireData;
+                var info = ((IUpgradable)__instance).Info;
+                if (info == null || _offsets == null)
+                    return;
+                Vector3 o = Quaternion.Inverse(PlayerLook.Rotation) * (fd.firePosition - PlayerLook.Position);
+                if (!_offsets.Set(info.name, o.x, o.y, o.z))
+                    return;
+                try
+                {
+                    _offsets.Save();
+                }
+                catch (System.Exception e)
+                {
+                    Plugin.Log.LogWarning("Could not save the grenade fire points: " + e.Message);
+                }
             }
         }
 
-        private static void OnThrowPressed_Prefix(InputAction.CallbackContext context)
+        [HarmonyPatch(typeof(SimpleProjectileBullet), nameof(SimpleProjectileBullet.Initialize))]
+        internal static class BulletInitializePatch
         {
-            _throwAction = context.action;
-        }
-
-        private static bool TryThrow_Prefix(Player __instance)
-        {
-            try
+            /// <summary>Keeps the real grenade bullet's data, and logs it next to the last prediction.</summary>
+            [HarmonyPostfix]
+            private static void Postfix(SimpleProjectileBullet __instance, BulletData data, IDamageSource source, BulletFlags flags)
             {
-                if (_releasing || !Plugin.GrenadeAim.Value || __instance != Player.LocalPlayer)
-                    return true;
-                var grenade = Grenade(__instance);
-                if (grenade == null || grenade.Active || ((IActivatedAbility)grenade).Charge < 1f)
-                    return true; // not ours to hold back; the game plays its own error when uncharged
-                if (_throwAction == null || !_throwAction.IsPressed())
-                    return true; // released already (a tap): throw now
-                _aiming = __instance;
-                return false;
-            }
-            catch (System.Exception e)
-            {
-                Plugin.Log.LogWarning("Grenade aiming failed; throwing normally: " + e);
-                _aiming = null;
-                return true;
-            }
-        }
-
-        /// <summary>Remembers where the grenade leaves from, relative to the camera, for the next arc.</summary>
-        private static void FireBullet_Postfix(Throwable __instance)
-        {
-            if (!(__instance is GrenadeGear) || __instance.Player != Player.LocalPlayer)
-                return;
-            var fd = FireDataRef(__instance);
-            var info = ((IUpgradable)__instance).Info;
-            if (info == null || _offsets == null)
-                return;
-            Vector3 o = Quaternion.Inverse(PlayerLook.Rotation) * (fd.firePosition - PlayerLook.Position);
-            if (!_offsets.Set(info.name, o.x, o.y, o.z))
-                return;
-            try
-            {
-                _offsets.Save();
-            }
-            catch (System.Exception e)
-            {
-                Plugin.Log.LogWarning("Could not save the grenade fire points: " + e.Message);
+                // Local copies: reading members of the struct parameters directly trips Harmony003.
+                var real = data;
+                var bulletFlags = flags;
+                try
+                {
+                    if (!(__instance is GrenadeBullet) || !bulletFlags.IsOwner() || !(source is GrenadeGear grenade))
+                        return;
+                    float life = Lifetime(__instance);
+                    var info = ((IUpgradable)grenade).Info;
+                    if (info == null)
+                        return;
+                    LearnedData[info] = new Learned { Data = real, Lifetime = life > 0f ? life : DefaultLifetime };
+                    if (_predicted is BulletData p)
+                    {
+                        Plugin.Log.LogInfo("grenade thrown (" + __instance.GetType().Name + ", lifetime " + life.ToString("F1") + " s, prediction from " +
+                            (_predictedLearned ? "its last throw" : "GunData") + "). predicted vs real: " +
+                            "pos " + p.position.ToString("F2") + " / " + real.position.ToString("F2") +
+                            ", dir " + p.direction.ToString("F3") + " / " + real.direction.ToString("F3") +
+                            ", speed " + p.speed.ToString("F1") + " / " + real.speed.ToString("F1") +
+                            ", gravity " + p.gravity.ToString("F2") + " / " + real.gravity.ToString("F2") +
+                            ", bounces " + p.maxBounces + " / " + real.maxBounces +
+                            ", surface mask " + p.surfaceCollisionMask + " / " + real.surfaceCollisionMask +
+                            ", target mask " + p.targetCollisionMask + " / " + real.targetCollisionMask +
+                            ", range " + p.range.maxDamageRange.ToString("F0") + " / " + real.range.maxDamageRange.ToString("F0") +
+                            " | arc: " + _lastEnd);
+                        _predicted = null;
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Plugin.Log.LogWarning("Could not read the thrown grenade: " + e);
+                }
             }
         }
 
@@ -247,11 +266,12 @@ namespace MycopunkThrowPreview
             if (look == null)
                 return false;
             var info = ((IUpgradable)grenade).Info;
-            GunData gun = GunDataRef(grenade); // a copy: nothing on the grenade changes
+            GunData gun = grenade.gunData; // a copy: nothing on the grenade changes
             var fd = new FireData();
             float prepared = 0f;
-            Vector3 firePos = PlayerLook.Position + PlayerLook.Rotation *
-                FireOffset(info);
+            // PlayerLook.Position/Rotation are cached in Update; the look transform is updated in LateUpdate.
+            look.transform.GetPositionAndRotation(out var lookPosition, out var lookRotation);
+            Vector3 firePos = lookPosition + lookRotation * FireOffset(info);
             gun.PrepareFireData(ref fd, firePos, look, ref prepared);
             BulletData data = gun.GetBulletData(ref fd.firePosition, ref fd.bulletRotation);
             grenade.ModifyBulletData(ref data, OwnerFlags);
@@ -273,7 +293,7 @@ namespace MycopunkThrowPreview
                 data.impactSize = real.impactSize;
             }
             if (data.surfaceCollisionMask == 0 && Player.LocalPlayer != null)
-                data.surfaceCollisionMask = GroundMask(Player.LocalPlayer).value;
+                data.surfaceCollisionMask = Player.LocalPlayer.groundLayerMask.value;
             _predicted = data;
 
             Vector3 velocity = data.direction * data.speed;

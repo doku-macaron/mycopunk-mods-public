@@ -37,11 +37,7 @@ namespace UpgradeLagFix
                 SceneManager.activeSceneChanged += ActiveSceneChanged;
                 try
                 {
-                    var room = AccessTools.Method(typeof(OuroMission), "OnRoomCompleted");
-                    if (room != null)
-                        harmony.Patch(room, postfix: new HarmonyMethod(typeof(SessionLog), nameof(RoomCompleted_Postfix)));
-                    else
-                        log.LogWarning("OuroMission.OnRoomCompleted not found; no stats dump per room");
+                    harmony.CreateClassProcessor(typeof(RoomCompletedPatch)).Patch();
                 }
                 catch (Exception e)
                 {
@@ -50,7 +46,13 @@ namespace UpgradeLagFix
             }
         }
 
-        private static void RoomCompleted_Postfix() => Request("ouroboros room completed");
+        [HarmonyPatch(typeof(OuroMission), nameof(OuroMission.OnRoomCompleted))]
+        private static class RoomCompletedPatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix() => Request("ouroboros room completed");
+        }
+
         private static void ActiveSceneChanged(Scene from, Scene to) => Request("scene " + from.name + " -> " + to.name);
 
         // Dumping is deferred to the next Update so it never runs inside a game method.

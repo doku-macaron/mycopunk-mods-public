@@ -1,4 +1,5 @@
 using TMPro;
+using MycopunkShared;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -56,7 +57,7 @@ internal sealed class LocalDpsLabel
         }
 
         string value = text.Get(stats, false, false, true);
-        if (label.text != value) label.text = value;
+        GameHudText.SetText(label, value);
         label.color = Color.white;
         label.rectTransform.localPosition = topLeft + new Vector3(0, 4f, 0);
     }

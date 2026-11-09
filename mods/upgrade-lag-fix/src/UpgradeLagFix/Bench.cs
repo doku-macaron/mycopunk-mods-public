@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using HarmonyLib;
 using Pigeon.Movement;
 
 namespace UpgradeLagFix
@@ -16,9 +15,6 @@ namespace UpgradeLagFix
     {
         private const double TargetMsPerMode = 300.0;
         private const int MaxReps = 500;
-
-        private static readonly AccessTools.FieldRef<PlayerData, Dictionary<int, List<UpgradeInfo>>> DataRef =
-            AccessTools.FieldRefAccess<PlayerData, Dictionary<int, List<UpgradeInfo>>>("data");
 
         public static void Run()
         {
@@ -163,7 +159,7 @@ namespace UpgradeLagFix
         {
             infos = 0;
             int total = 0;
-            var data = DataRef(PlayerData.Instance);
+            var data = PlayerData.Instance.data;
             if (data == null) return 0;
             foreach (var kv in data)
             {

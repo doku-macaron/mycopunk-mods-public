@@ -78,8 +78,9 @@ namespace MycopunkThrowPreview
             var tmp = _path + ".tmp";
             File.WriteAllText(tmp, sb.ToString(), new UTF8Encoding(false));
             if (File.Exists(_path))
-                File.Delete(_path);
-            File.Move(tmp, _path);
+                File.Replace(tmp, _path, null);
+            else
+                File.Move(tmp, _path);
         }
 
         internal static void Parse(string line, Dictionary<string, float[]> into)

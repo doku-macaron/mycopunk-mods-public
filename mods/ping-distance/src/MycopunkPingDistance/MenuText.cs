@@ -14,7 +14,7 @@ namespace MycopunkPingDistance
             ["en"] = new Dictionary<string, string>
             {
                 ["ping.distance"] = "Distance under pings",
-                ["ping.color"] = "Distance in ping colour",
+                ["ping.color"] = "Distance in ping color",
             },
             ["ja"] = new Dictionary<string, string>
             {
@@ -27,7 +27,7 @@ namespace MycopunkPingDistance
         {
             ["ja"] = new Dictionary<string, string>
             {
-                ["ping.distance"] = "自分や味方のピン、マップ上のピン、目標マーカーの下に距離をメートルで表示します。変更はすぐに反映されます。",
+                ["ping.distance"] = "自分や味方のピン、マップ上のピン、目標マーカーの下に距離をメートルで表示します。この変更は即時に反映されます。",
                 ["ping.color"] = "距離を白ではなくピンと同じ色で表示します。白のほうが多くの地面で読みやすくなります。",
             },
         };

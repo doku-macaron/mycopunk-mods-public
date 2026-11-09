@@ -18,6 +18,7 @@ namespace MycopunkHealthNumbers
     /// </summary>
     internal static class StatDump
     {
+        // Reflection here walks every field of a type to dump it (unknown field list), not to reach named members.
         private const BindingFlags InstanceFields = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         public static void Write()
@@ -41,13 +42,9 @@ namespace MycopunkHealthNumbers
 
             AppendTable(sb, "Player", typeof(Player), prefab, local);
 
-            FieldInfo uv = typeof(Player).GetField("upgradeVariables", InstanceFields);
-            if (uv != null)
-            {
-                object uvBase = prefab != null ? uv.GetValue(prefab) : null;
-                object uvCur = local != null ? uv.GetValue(local) : null;
-                AppendTable(sb, "Player.upgradeVariables", uv.FieldType, uvBase, uvCur);
-            }
+            object uvBase = prefab != null ? (object)prefab.upgradeVariables : null;
+            object uvCur = local != null ? (object)local.upgradeVariables : null;
+            AppendTable(sb, "Player.upgradeVariables", typeof(Player.UpgradeVariableData), uvBase, uvCur);
 
             if (local != null)
                 AppendGear(sb, local);
@@ -77,7 +74,7 @@ namespace MycopunkHealthNumbers
         {
             try
             {
-                object c = AccessProperty(player, "Character");
+                object c = player.Character;
                 if (c is UnityEngine.Object o && o != null)
                     return o.name;
                 return c?.ToString() ?? "(unknown)";
@@ -86,12 +83,6 @@ namespace MycopunkHealthNumbers
             {
                 return "(unknown)";
             }
-        }
-
-        private static object AccessProperty(object obj, string name)
-        {
-            PropertyInfo p = obj.GetType().GetProperty(name, InstanceFields);
-            return p?.GetValue(obj);
         }
 
         private static void AppendTable(StringBuilder sb, string title, Type type, object baseObj, object curObj)
@@ -117,7 +108,7 @@ namespace MycopunkHealthNumbers
         /// </summary>
         private static void AppendGear(StringBuilder sb, Player player)
         {
-            if (!(AccessProperty(player, "Gear") is System.Collections.IEnumerable gears))
+            if (!(player.Gear is System.Collections.IEnumerable gears))
                 return;
             int slot = 0;
             foreach (object gear in gears)

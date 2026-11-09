@@ -5,7 +5,7 @@
   <PropertyGroup>
     <AssemblyName>MycopunkHealthNumbers</AssemblyName>
     <RootNamespace>MycopunkHealthNumbers</RootNamespace>
-    <Version>0.4.3</Version>
+    <Version>0.4.4</Version>
     <!-- shared/Menu: the MODS tab in the game's options window (also brings the TMP / UI references). -->
     <UseSharedMenu>true</UseSharedMenu>
     <!-- shared/Hud: the teammate line under the name (TeammateHudLines). -->
@@ -13,6 +13,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="Unity.Collections" HintPath="$(ManagedDir)\Unity.Collections.dll" Private="false" />
     <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ManagedDir)\UnityEngine.IMGUIModule.dll" Private="false" />
     <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(ManagedDir)\UnityEngine.TextRenderingModule.dll" Private="false" />
   </ItemGroup>

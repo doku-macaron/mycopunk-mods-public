@@ -3,6 +3,7 @@ obj/
 *.user
 .vs/
 GamePath.props
+.mycopunk-export-target
 dist/
 /output/
 
@@ -10,3 +11,4 @@ dist/
 tools/datamine/out/
 __pycache__/
 *.pyc
+.claude/worktrees/

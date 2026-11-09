@@ -46,8 +46,7 @@ foreach ($pkg in $spec.packages) {
     $plugin = Get-ChildItem (Split-Path $p.Path) -Filter Plugin.cs | Select-Object -First 1
     if ($plugin) {
         $src = Get-Content $plugin.FullName -Raw
-        if ($pkg.core -eq $true) { $src = Get-Content (Join-Path $root "shared/MacaronCore.cs") -Raw }
-        if ($src -notmatch [regex]::Escape('"' + $p.Version + '"')) {
+        if ($pkg.core -ne $true -and $src -notmatch [regex]::Escape('"' + $p.Version + '"')) {
             Write-Warning "$($pkg.name): version $($p.Version) not found in $($plugin.Name) (BepInPlugin version may differ)."
         }
     }

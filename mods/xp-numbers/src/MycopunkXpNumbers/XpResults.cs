@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Collections.Generic;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
@@ -20,74 +21,84 @@ namespace MycopunkXpNumbers
     /// </summary>
     internal static class XpResults
     {
+        // The coroutine's state machine (MissionRewardsWindow.<ShowXPCoroutine>d__37) is compiler-generated, so C#
+        // cannot name it or its fields; they are read by reflection, looked up once from the first instance.
         private static FieldInfo _ui, _xp, _level, _prevXP, _prevLevel, _time;
-        private static Func<PlayerData.GearData, int, bool, int> _cost;
+        private static int _fields; // 0: not looked up yet, 1: found, -1: missing (the postfix then does nothing)
         private const string LabelName = "XP numbers";
         private static bool _loggedLayout;
+        private static readonly List<GameObject> Labels = new List<GameObject>();
 
-        public static void Install(Harmony harmony)
+        public static void Cleanup()
         {
-            var start = AccessTools.Method(typeof(MissionRewardsWindow), "ShowXPCoroutine");
-            var moveNext = start != null ? AccessTools.EnumeratorMoveNext(start) : null;
-            if (moveNext == null)
-            {
-                Plugin.Log.LogWarning("MissionRewardsWindow.ShowXPCoroutine not found; no XP numbers on the mission results.");
-                return;
-            }
-            var t = moveNext.DeclaringType;
+            foreach (var label in Labels)
+                if (label != null) UnityEngine.Object.Destroy(label);
+            Labels.Clear();
+        }
+
+        private static bool FindFields(Type t)
+        {
             _ui = AccessTools.Field(t, "ui");
             _xp = AccessTools.Field(t, "xp");
             _level = AccessTools.Field(t, "level");
             _prevXP = AccessTools.Field(t, "prevXP");
             _prevLevel = AccessTools.Field(t, "prevLevel");
             _time = AccessTools.Field(t, "<time>5__2");
-            var cost = AccessTools.Method(typeof(PlayerData.GearData), "GetLevelXPCost", new[] { typeof(int), typeof(bool) });
-            if (_ui == null || _xp == null || _level == null || _prevXP == null || _prevLevel == null || _time == null || cost == null)
+            if (_ui == null || _xp == null || _level == null || _prevXP == null || _prevLevel == null || _time == null)
             {
                 Plugin.Log.LogWarning("ShowXPCoroutine is not as expected; no XP numbers on the mission results.");
-                return;
+                return false;
             }
-            _cost = AccessTools.MethodDelegate<Func<PlayerData.GearData, int, bool, int>>(cost);
-            harmony.Patch(moveNext, postfix: new HarmonyMethod(typeof(XpResults), nameof(MoveNext_Postfix)));
+            return true;
         }
 
-        private static void MoveNext_Postfix(object __instance)
+        /// <summary>Postfix on the MoveNext of the ShowXPCoroutine state machine.</summary>
+        [HarmonyPatch(typeof(MissionRewardsWindow), nameof(MissionRewardsWindow.ShowXPCoroutine), MethodType.Enumerator)]
+        internal static class ShowXPPatch
         {
-            try
+            [HarmonyPostfix]
+            private static void Postfix(object __instance)
             {
-                var ui = _ui.GetValue(__instance) as Component;
-                if (ui == null || !ui.gameObject.activeInHierarchy || ui.transform.childCount < 5)
-                    return; // still waiting for its delay (the time field counts the delay then)
-                var label = Label(ui.transform);
-                if (label == null)
+                if (_fields == 0)
+                    _fields = FindFields(__instance.GetType()) ? 1 : -1;
+                if (_fields < 0)
                     return;
-                if (!Plugin.Enabled.Value)
+                try
                 {
-                    label.text = "";
-                    return;
+                    var ui = _ui.GetValue(__instance) as ResourceUI;
+                    if (ui == null || !ui.gameObject.activeInHierarchy || ui.transform.childCount < 5)
+                        return; // still waiting for its delay (the time field counts the delay then)
+                    var label = Label(ui.transform);
+                    if (label == null)
+                        return;
+                    if (!Plugin.Enabled.Value)
+                    {
+                        label.text = "";
+                        return;
+                    }
+                    var gearInfo = ui.GearInfo;
+                    var data = gearInfo != null ? PlayerData.GetGearData(gearInfo) : null;
+                    if (data == null)
+                    {
+                        label.text = "";
+                        return;
+                    }
+                    int prevLevel = Convert.ToInt32(_prevLevel.GetValue(__instance));
+                    int level = Convert.ToInt32(_level.GetValue(__instance));
+                    float prevXP = Convert.ToSingle(_prevXP.GetValue(__instance));
+                    float xp = Convert.ToSingle(_xp.GetValue(__instance));
+                    float time = Mathf.Clamp01(Convert.ToSingle(_time.GetValue(__instance)));
+                    Func<int, int> costOf = n => data.GetLevelXPCost(n, false);
+                    float from = prevLevel + prevXP / costOf(prevLevel + 1);
+                    float to = level + xp / costOf(level + 1);
+                    float v = Mathf.LerpUnclamped(from, to, XpText.EaseOutQuartic(time));
+                    XpText.AtFractionalLevel(v, costOf, out int shownLevel, out int shownXP, out int shownCost);
+                    label.text = XpText.Progress(shownXP, shownCost, shownLevel, data.MaxLevel);
                 }
-                var gearInfo = AccessTools.Property(ui.GetType(), "GearInfo")?.GetValue(ui) as GearInfo;
-                var data = gearInfo != null ? PlayerData.GetGearData(gearInfo) : null;
-                if (data == null)
+                catch (Exception e)
                 {
-                    label.text = "";
-                    return;
+                    Plugin.Log.LogWarning("XP numbers on the mission results failed: " + e);
                 }
-                int prevLevel = Convert.ToInt32(_prevLevel.GetValue(__instance));
-                int level = Convert.ToInt32(_level.GetValue(__instance));
-                float prevXP = Convert.ToSingle(_prevXP.GetValue(__instance));
-                float xp = Convert.ToSingle(_xp.GetValue(__instance));
-                float time = Mathf.Clamp01(Convert.ToSingle(_time.GetValue(__instance)));
-                Func<int, int> costOf = n => _cost(data, n, false);
-                float from = prevLevel + prevXP / costOf(prevLevel + 1);
-                float to = level + xp / costOf(level + 1);
-                float v = Mathf.LerpUnclamped(from, to, XpText.EaseOutQuartic(time));
-                XpText.AtFractionalLevel(v, costOf, out int shownLevel, out int shownXP, out int shownCost);
-                label.text = XpText.Progress(shownXP, shownCost, shownLevel, data.MaxLevel);
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning("XP numbers on the mission results failed: " + e);
             }
         }
 
@@ -110,6 +121,7 @@ namespace MycopunkXpNumbers
                     ", level text " + template.name + " size " + template.fontSize + ", align " + template.alignment);
             }
             var go = UnityEngine.Object.Instantiate(template.gameObject, bar, false);
+            Labels.Add(go);
             go.name = LabelName;
             for (int i = go.transform.childCount - 1; i >= 0; i--)
                 UnityEngine.Object.Destroy(go.transform.GetChild(i).gameObject);

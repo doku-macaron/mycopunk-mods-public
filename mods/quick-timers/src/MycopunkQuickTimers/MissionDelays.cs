@@ -19,50 +19,88 @@ namespace MycopunkQuickTimers
         {
             try
             {
-                var coroutine = AccessTools.Method(typeof(MissionManager), "OnMissionCompleteCoroutine");
-                var statsRpc = AccessTools.Method(typeof(DropPod), "SetMissionData_ClientRpc");
-                if (coroutine != null && statsRpc != null)
-                {
-                    harmony.Patch(coroutine, prefix: new HarmonyMethod(typeof(MissionDelays), nameof(ResetStats)));
-                    harmony.Patch(statsRpc, postfix: new HarmonyMethod(typeof(MissionDelays), nameof(ReceiveStats)));
-                    _statsSyncAvailable = true;
-                }
-                else Plugin.Log.LogWarning("Mission end delay: stats synchronization unavailable; using original delay.");
+                harmony.CreateClassProcessor(typeof(StatsSyncPatch)).Patch();
+                _statsSyncAvailable = true;
             }
             catch (Exception e) { Plugin.Log.LogWarning("Mission end delay: stats synchronization unavailable; using original delay. " + e.Message); }
-            Patch(harmony, typeof(DropPod), "FakeWaitToContinueDrop", nameof(Drop));
-            Patch(harmony, typeof(DropPod), "LaunchFromMissionCoroutine", nameof(Extraction));
-            Patch(harmony, typeof(MissionManager), "StartFirstObjective", nameof(Start));
-            Patch(harmony, typeof(MissionManager), "OnMissionCompleteCoroutine", nameof(End));
+            Apply(harmony, typeof(DropPatch), nameof(DropPod.FakeWaitToContinueDrop));
+            Apply(harmony, typeof(ExtractionPatch), nameof(DropPod.LaunchFromMissionCoroutine));
+            Apply(harmony, typeof(StartPatch), nameof(MissionManager.StartFirstObjective));
+            Apply(harmony, typeof(EndPatch), nameof(MissionManager.OnMissionCompleteCoroutine));
         }
 
-        private static void Patch(Harmony harmony, Type type, string coroutineName, string transpiler)
+        private static void Apply(Harmony harmony, Type patch, string coroutineName)
         {
             try
             {
-                var coroutine = AccessTools.Method(type, coroutineName);
-                var moveNext = coroutine == null ? null : AccessTools.EnumeratorMoveNext(coroutine);
-                if (moveNext == null) { Plugin.Log.LogWarning("Mission delay " + coroutineName + ": coroutine not found."); return; }
-                harmony.Patch(moveNext, transpiler: new HarmonyMethod(typeof(MissionDelays), transpiler));
+                harmony.CreateClassProcessor(patch).Patch();
             }
             catch (Exception e) { Plugin.Log.LogWarning("Mission delay " + coroutineName + " unchanged: " + e.Message); }
         }
 
+        [HarmonyPatch]
+        private static class StatsSyncPatch
+        {
+            [HarmonyPatch(typeof(MissionManager), nameof(MissionManager.OnMissionCompleteCoroutine))]
+            [HarmonyPrefix]
+            private static void ResetStats() => _statsReceived = false;
+
+            // The server broadcasts these stats only after collecting all players' mission data.
+            [HarmonyPatch(typeof(DropPod), nameof(DropPod.SetMissionData_ClientRpc))]
+            [HarmonyPostfix]
+            private static void ReceiveStats() => _statsReceived = true;
+        }
+
+        [HarmonyPatch(typeof(DropPod), nameof(DropPod.FakeWaitToContinueDrop), MethodType.Enumerator)]
+        private static class DropPatch
+        {
+            [HarmonyTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) => Drop(instructions);
+        }
+
+        [HarmonyPatch(typeof(DropPod), nameof(DropPod.LaunchFromMissionCoroutine), MethodType.Enumerator)]
+        private static class ExtractionPatch
+        {
+            [HarmonyTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) => Extraction(instructions);
+        }
+
+        [HarmonyPatch(typeof(MissionManager), nameof(MissionManager.StartFirstObjective), MethodType.Enumerator)]
+        private static class StartPatch
+        {
+            [HarmonyTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) => Start(instructions);
+        }
+
+        [HarmonyPatch(typeof(MissionManager), nameof(MissionManager.OnMissionCompleteCoroutine), MethodType.Enumerator)]
+        private static class EndPatch
+        {
+            [HarmonyTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) => End(instructions);
+        }
+
+        // CodeInstruction.labels is a List<Label> of 0Harmony's mscorlib, which netstandard2.1 cannot bind to (not even with nameof), so it is read
+        // by reflection (at runtime both are the same mscorlib).
+        private static readonly FieldInfo LabelsField = AccessTools.Field(typeof(CodeInstruction), "labels");
+        private static bool HasLabels(CodeInstruction instruction) =>
+            LabelsField == null || !(LabelsField.GetValue(instruction) is IList labels) || labels.Count != 0;
+
         private static bool IsLessThan(CodeInstruction instruction) => instruction.opcode == OpCodes.Blt || instruction.opcode == OpCodes.Blt_S;
+        // The coroutines' locals are compiler-generated fields (<time>5__N), which C# cannot name.
+        private static bool IsTimeField(FieldInfo field) => field.Name.StartsWith("<time>", StringComparison.Ordinal);
         private static bool IsTimeField(CodeInstruction instruction) => instruction.opcode == OpCodes.Ldfld &&
-            instruction.operand is FieldInfo field && field.Name.StartsWith("<time>", StringComparison.Ordinal);
+            instruction.operand is FieldInfo field && IsTimeField(field);
 
         private static IEnumerable<CodeInstruction> Drop(IEnumerable<CodeInstruction> instructions)
         {
             var code = instructions.ToList();
-            var overrideDuration = AccessTools.Method(typeof(Mission), "OverrideDropDuration");
+            var overrideDuration = AccessTools.Method(typeof(Mission), nameof(Mission.OverrideDropDuration));
             var matches = Enumerable.Range(2, code.Count - 5).Where(i =>
                 code[i].opcode == OpCodes.Ldc_R4 && Equals(code[i].operand, 6f) &&
                 (code[i - 1].opcode == OpCodes.Brtrue || code[i - 1].opcode == OpCodes.Brtrue_S) &&
                 code[i - 2].Calls(overrideDuration) &&
                 (code[i + 1].opcode == OpCodes.Br || code[i + 1].opcode == OpCodes.Br_S) &&
-                code[i + 3].opcode == OpCodes.Stfld && code[i + 3].operand is FieldInfo field &&
-                field.Name.StartsWith("<time>", StringComparison.Ordinal)).ToList();
+                code[i + 3].opcode == OpCodes.Stfld && code[i + 3].operand is FieldInfo field && IsTimeField(field)).ToList();
             ReplaceConstant(code, matches, nameof(DropDuration), "drop");
             return code;
         }
@@ -70,13 +108,11 @@ namespace MycopunkQuickTimers
         private static IEnumerable<CodeInstruction> Start(IEnumerable<CodeInstruction> instructions)
         {
             var code = instructions.ToList();
-            var field = AccessTools.Field(typeof(MissionManager), "timeBeforeStartingMission");
+            var field = AccessTools.Field(typeof(MissionManager), nameof(MissionManager.timeBeforeStartingMission));
             var matches = Enumerable.Range(1, code.Count - 2).Where(i => field != null &&
                 code[i].LoadsField(field) && IsLessThan(code[i + 1]) &&
                 i >= 2 && IsTimeField(code[i - 2])).ToList();
-            var labelsField = AccessTools.Field(typeof(CodeInstruction), "labels");
-            if (matches.Count != 1 || labelsField == null ||
-                !(labelsField.GetValue(code[matches[0] + 1]) is IList labels) || labels.Count != 0)
+            if (matches.Count != 1 || HasLabels(code[matches[0] + 1]))
             {
                 Plugin.Log.LogWarning("Mission start delay: expected code not found; unchanged.");
                 return code;
@@ -88,12 +124,10 @@ namespace MycopunkQuickTimers
         private static IEnumerable<CodeInstruction> Extraction(IEnumerable<CodeInstruction> instructions)
         {
             var code = instructions.ToList();
-            var field = AccessTools.Field(typeof(DropPod), "extractionTime");
+            var field = AccessTools.Field(typeof(DropPod), nameof(DropPod.extractionTime));
             var matches = Enumerable.Range(2, code.Count - 3).Where(i => field != null &&
                 code[i].LoadsField(field) && IsLessThan(code[i + 1]) && IsTimeField(code[i - 2])).ToList();
-            var labelsField = AccessTools.Field(typeof(CodeInstruction), "labels");
-            if (matches.Count != 1 || labelsField == null ||
-                !(labelsField.GetValue(code[matches[0] + 1]) is IList labels) || labels.Count != 0)
+            if (matches.Count != 1 || HasLabels(code[matches[0] + 1]))
             {
                 Plugin.Log.LogWarning("Extraction delay: expected code not found; unchanged.");
                 return code;
@@ -105,7 +139,7 @@ namespace MycopunkQuickTimers
         private static IEnumerable<CodeInstruction> End(IEnumerable<CodeInstruction> instructions)
         {
             var code = instructions.ToList();
-            var rewards = AccessTools.Field(typeof(Global), "rewardInfoBuffer");
+            var rewards = AccessTools.Field(typeof(Global), nameof(Global.rewardInfoBuffer));
             var matches = Enumerable.Range(1, code.Count - 3).Where(i =>
                 code[i].opcode == OpCodes.Ldc_R4 && Equals(code[i].operand, 3.5f) &&
                 IsTimeField(code[i - 1]) && IsLessThan(code[i + 1]) &&
@@ -145,9 +179,6 @@ namespace MycopunkQuickTimers
                 return original;
             }
         }
-        private static void ResetStats() => _statsReceived = false;
-        // The server broadcasts these stats only after collecting all players' mission data.
-        private static void ReceiveStats() => _statsReceived = true;
         private static float EndDuration() => Plugin.FastMissionEnd.Value && _statsSyncAvailable && _statsReceived ? 0.01f : 3.5f;
     }
 }
